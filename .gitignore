@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+data/*.db
+data/settings.json
+backend/vision/assets/*.task
+.DS_Store
