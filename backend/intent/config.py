@@ -20,6 +20,10 @@ class Zone(BaseModel):
     y0: float
     x1: float
     y1: float
+    # Optional mode-layer metadata (ignored by the intent maths, used by the UI).
+    action: Optional[str] = None      # explicit command action; None = toggle the device state
+    kind: str = "physical"            # "physical" (ESP32 node) or "digital" (mode UI control)
+    hint: str = ""                    # short helper text for the mode dashboard
 
     def contains(self, x: float, y: float, margin: float = 0.0) -> bool:
         return (self.x0 - margin) <= x <= (self.x1 + margin) and (self.y0 - margin) <= y <= (self.y1 + margin)
@@ -98,7 +102,15 @@ class IntentConfig(BaseModel):
 
 
 # Toggle actions per device given its confirmed state.
-def toggle_action(device: str, current_state: Optional[str]) -> str:
+def toggle_action(device: str, current_state: Optional[str], action: Optional[str] = None) -> str:
+    """Resolve the command action for a control.
+
+    A zone may declare an explicit action (needed for digital mode controls such as
+    ``OPEN_RECORD``); otherwise the historical toggle behaviour is used. Existing callers
+    that pass only (device, state) keep working unchanged.
+    """
+    if action:
+        return action
     if device == "access":
         return "LOCK" if current_state == "UNLOCKED" else "UNLOCK"
     return "OFF" if current_state == "ON" else "ON"

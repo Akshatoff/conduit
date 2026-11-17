@@ -34,6 +34,20 @@ def test_metric_definitions_on_known_data():
     assert m["avg_e2e_latency_ms"] == pytest.approx(200.0)
     assert m["device_ack_rate"] == pytest.approx(2 / 3)
     assert m["confirmation_request_rate"] == pytest.approx(2 / 7)
+    # both trials that asked for confirmation went on to execute
+    assert m["confirmation_success_rate"] == pytest.approx(1.0)
+    assert m["avg_task_duration_s"] is None  # no trial timings supplied -> unknown, never invented
+
+
+def test_task_duration_and_confirmation_success_are_measured_from_trials():
+    a = trial("intended", True, True, True, True)
+    a.update(started_at=100.0, ended_at=105.0)
+    b = trial("intended", False, confirm=True)
+    b.update(started_at=200.0, ended_at=204.0)
+    m = compute_metrics([a, b])
+    assert m["confirmation_requests"] == 2
+    assert m["confirmation_success_rate"] == pytest.approx(0.5)
+    assert m["avg_task_duration_s"] == pytest.approx(4.5)
 
 
 def test_rejecting_everything_does_not_look_accurate():
@@ -76,7 +90,7 @@ def test_trial_recording_and_summary_and_csv(svc):
     assert s["by_mode"]["baseline"]["attempts"] == 0
     csv_text = svc.export_csv()
     lines = csv_text.strip().splitlines()
-    assert lines[0].startswith("session_id,mode,trial_id,label") and len(lines) == 3
+    assert lines[0].startswith("session_id,mode,workspace,trial_id,label") and len(lines) == 3
     assert "TRANSIT" in csv_text
 
 

@@ -1,10 +1,13 @@
-import { BarChart3, Box, Camera, CameraOff, Cloud, Hand, Server, Settings2, X } from 'lucide-react'
+import { BarChart3, Box, Camera, CameraOff, Cloud, Hand, LayoutGrid, Layers, Server, Settings2, X } from 'lucide-react'
 import { useEffect, type ReactNode } from 'react'
+import { getMode } from '../modes/registry'
 import { useConduit, type Page } from '../store'
 import { cn } from '../utils/cn'
 import { Pill } from './ui'
 
 const NAV: { id: Page; label: string; icon: ReactNode }[] = [
+  { id: 'modes', label: 'Environments', icon: <LayoutGrid className="size-[18px]" /> },
+  { id: 'workspace', label: 'Workspace', icon: <Layers className="size-[18px]" /> },
   { id: 'live', label: 'Live Interaction', icon: <Hand className="size-[18px]" /> },
   { id: 'twin', label: 'Digital Twin', icon: <Box className="size-[18px]" /> },
   { id: 'analytics', label: 'Analytics', icon: <BarChart3 className="size-[18px]" /> },
@@ -41,6 +44,8 @@ export function Layout({ children }: { children: ReactNode }) {
   const link = useConduit((s) => s.link)
   const camera = useConduit((s) => s.camera)
   const hw = useConduit((s) => s.hardwareMode)
+  const activeMode = useConduit((s) => s.activeMode)
+  const mode = getMode(activeMode)
   const notice = useConduit((s) => s.notice)
   const go = (p: Page) => useConduit.setState({ page: p })
 
@@ -53,7 +58,12 @@ export function Layout({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-full flex-col">
       <header className="sticky top-0 z-20 border-b border-line bg-bg/85 backdrop-blur">
-        <div className="mx-auto flex max-w-[1500px] flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 lg:px-6">
+        <div
+          className={cn(
+            'mx-auto flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 lg:px-6',
+            page === 'workspace' ? 'max-w-[2400px]' : 'max-w-[1500px]',
+          )}
+        >
           <Logo />
           <nav className="ml-2 hidden items-center gap-1 md:flex" aria-label="Main">
             {NAV.map((n) => (
@@ -64,6 +74,12 @@ export function Layout({ children }: { children: ReactNode }) {
             ))}
           </nav>
           <div className="ml-auto flex flex-wrap items-center gap-2">
+            {mode && (
+              <button onClick={() => go('workspace')} className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface2/60 px-2.5 py-1 text-[11px] font-medium text-ink hover:border-accent/50" title="Active operational environment — open workspace">
+                <span className="size-2 rounded-full" style={{ background: mode.accent }} aria-hidden />
+                {mode.shortName}
+              </button>
+            )}
             <Pill tone={kind === 'backend' ? (link === 'open' ? 'teal' : 'warn') : kind === 'browser' ? 'warn' : 'neutral'} icon={kind === 'backend' ? <Server className="size-3" /> : <Cloud className="size-3" />}>
               {kind === 'probing' ? 'Detecting backend…' : kind === 'backend' ? (link === 'open' ? 'Python backend · live' : 'Backend reconnecting…') : 'Browser runtime'}
             </Pill>
@@ -81,18 +97,30 @@ export function Layout({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-[1500px] flex-1 px-4 pb-24 pt-5 md:pb-10 lg:px-6">{children}</main>
+      <main
+        className={cn(
+          'mx-auto w-full flex-1 px-4 pb-24 md:pb-10 lg:px-6',
+          page === 'workspace' ? 'max-w-[2400px] pt-3' : 'max-w-[1500px] pt-5',
+        )}
+      >
+        {children}
+      </main>
 
-      <footer className="mx-auto hidden w-full max-w-[1500px] px-6 pb-6 text-[11px] leading-relaxed text-muted md:block">
+      <footer
+        className={cn(
+          'mx-auto hidden w-full px-6 pb-6 text-[11px] leading-relaxed text-muted md:block',
+          page === 'workspace' ? 'max-w-[2400px]' : 'max-w-[1500px]',
+        )}
+      >
         Conduit is a research prototype for isolated low-voltage demonstration electronics. It is not a certified medical, industrial or safety-critical control system and makes no claims about infection prevention or sterility. Camera data is processed locally and never recorded.
       </footer>
 
       {/* mobile bottom navigation */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-line bg-bg/95 backdrop-blur md:hidden" aria-label="Main">
+      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-6 border-t border-line bg-bg/95 backdrop-blur md:hidden" aria-label="Main">
         {NAV.map((n) => (
           <button key={n.id} onClick={() => go(n.id)} className={cn('flex flex-col items-center gap-1 py-2.5 text-[10px] font-medium', page === n.id ? 'text-accent' : 'text-muted')}>
             {n.icon}
-            {n.label.split(' ')[0]}
+            {n.id === 'modes' ? 'Modes' : n.id === 'workspace' ? 'Space' : n.label.split(' ')[0]}
           </button>
         ))}
       </nav>

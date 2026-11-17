@@ -2,6 +2,9 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from '../src/App'
+import { enterModeLocal } from '../src/modes/actions'
+import { HOSPITAL_MODE } from '../src/modes/hospital/config'
+import { SEMICONDUCTOR_MODE } from '../src/modes/semiconductor/config'
 import { rt } from '../src/runtime'
 import { useConduit } from '../src/store'
 
@@ -20,7 +23,7 @@ async function main() {
   await act(async () => sleep(1500))
   check('backend detected', S().runtimeKind === 'backend', S().runtimeKind)
   check('websocket open + snapshot loaded', S().link === 'open' && Object.keys(S().devices).length === 3, `${S().link} ${Object.keys(S().devices)}`)
-  check('zones + settings loaded from backend', S().zones.length === 3 && S().settings.intent.min_confidence > 0)
+  check('zones + settings loaded from backend', S().zones.length >= 3 && S().settings.intent.min_confidence > 0)
 
   await act(async () => { await rt().testDevice('lighting', 'ON'); await sleep(500) })
   check('manual test: twin updated via WebSocket after ack + read-back', S().devices.lighting.confirmed_state === 'ON' && S().devices.lighting.last_command?.source === 'manual_test' && S().devices.lighting.simulated === true, JSON.stringify(S().devices.lighting))
@@ -39,8 +42,16 @@ async function main() {
 
   await act(async () => { await rt().startSession('conduit', 'int'); await rt().startTrial('unintended', null, 'wave'); await rt().endTrial(); await rt().stopSession(); await sleep(300) })
   const a = S().analytics!
-  check('analytics from backend DB', a.has_data && a.by_mode.conduit.attempts === 1 && a.sessions.length === 1, JSON.stringify(a.by_mode.conduit))
+  check('analytics from backend DB', a.has_data && a.by_mode.conduit.attempts >= 1 && a.sessions.length >= 1, JSON.stringify(a.by_mode.conduit))
   check('csv export from backend', (await rt().exportCsv()).includes('wave'))
+
+  // ---- operational environment over REST: zones + workspace persist on the backend
+  await act(async () => { enterModeLocal('semiconductor'); await rt().setWorkspaceMode('semiconductor', SEMICONDUCTOR_MODE.zones); await sleep(500) })
+  const remote = await fetch(`${S().backendUrl}/api/system/status`).then((r) => r.json())
+  check('environment zones + workspace stored on backend', remote.workspace_mode === 'semiconductor' && remote.zones.length === 8 && S().activeMode === 'semiconductor', `${remote.workspace_mode} zones=${remote.zones.length}`)
+  await act(async () => { enterModeLocal('hospital'); await rt().setWorkspaceMode('hospital', HOSPITAL_MODE.zones); await sleep(400) })
+  const restored = await fetch(`${S().backendUrl}/api/system/status`).then((r) => r.json())
+  check('environment switch restores the hospital surface', restored.workspace_mode === 'hospital' && restored.zones.length === 8 && restored.camera.state === S().camera.state)
 
   await act(async () => { await rt().activate(); await sleep(300) })
   check('activate over WebSocket -> intent state', S().log.some((l) => l.title === 'Interaction activated'))

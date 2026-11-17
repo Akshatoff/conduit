@@ -3,8 +3,10 @@ import { useEffect } from 'react'
 import { Layout } from './components/Layout'
 import { AnalyticsPage } from './pages/AnalyticsPage'
 import { LivePage } from './pages/LivePage'
+import { ModeSelectPage } from './pages/ModeSelectPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { TwinPage } from './pages/TwinPage'
+import { WorkspacePage } from './pages/WorkspacePage'
 import { hasRuntime, initRuntime } from './runtime'
 import { useConduit } from './store'
 
@@ -32,6 +34,8 @@ export default function App() {
         </div>
       ) : (
         <>
+          {page === 'modes' && <ModeSelectPage />}
+          {page === 'workspace' && <WorkspacePage />}
           {page === 'live' && <LivePage />}
           {page === 'twin' && <TwinPage />}
           {page === 'analytics' && <AnalyticsPage />}

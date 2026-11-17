@@ -54,3 +54,12 @@ def test_smoother_reduces_jitter():
     s = PositionSmoother(alpha=0.4)
     outs = [s.update(0.5 + (0.02 if i % 2 else -0.02), 0.5)[0] for i in range(30)]
     assert max(outs[10:]) - min(outs[10:]) < 0.02
+
+
+def test_feature_dict_exposes_landmarks_for_the_optional_second_hand():
+    """Signature screens draw the second hand; the Intent Engine still uses only the primary one."""
+    f = extract_features(make_hand("open_palm", 0.62, 0.44), "Left", 0.93, 1.0)
+    d = f.to_dict()
+    assert len(d["landmarks"]) == 21
+    assert d["landmarks"][0] == f.landmarks[0]
+    assert d["handedness"] == "Left"

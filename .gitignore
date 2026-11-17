@@ -10,3 +10,8 @@ data/*.db
 data/settings.json
 backend/vision/assets/*.task
 .DS_Store
+# temporary test bundles
+.parity.cjs
+.modes.cjs
+.ui.cjs
+.backend-smoke.cjs

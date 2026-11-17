@@ -1,7 +1,10 @@
 // Client for the Python/FastAPI backend: REST for control, WebSocket for structured real-time events.
 // Camera capture, MediaPipe tracking, intent processing and device control all happen in Python.
 
-import type { AnalyticsSummary, AppSettings, CameraState, DeviceTwin, IntentEvent, IntentSnapshot, VisionFrame } from '../core/types'
+import type { AnalyticsSummary, AppSettings, CameraState, DeviceTwin, IntentEvent, IntentSnapshot, VisionFrame, Zone } from '../core/types'
+import { applyDigitalCommand, recordPhysicalOutcome } from '../modes/actions'
+import { getMode } from '../modes/registry'
+import type { ModeId } from '../modes/types'
 import { idleSnapshot, pushLog, useConduit } from '../store'
 import { logCommandEvent, logIntentEvent } from './logging'
 import type { Runtime } from './types'
@@ -118,8 +121,10 @@ export class BackendRuntime implements Runtime {
     switch (env.type) {
       case 'snapshot': {
         const dev = d.devices as { mode: 'simulation' | 'hardware'; devices: DeviceTwin[]; hardware: { host: string; port: number; timeout_s: number } }
+        const workspace = typeof d.workspace_mode === 'string' ? d.workspace_mode : get().settings.workspace_mode
         set({
           camera: d.camera as CameraState,
+          settings: { ...get().settings, workspace_mode: workspace },
           interactionMode: d.interaction_mode as 'conduit' | 'baseline',
           hardwareMode: dev.mode,
           hardwareInfo: dev.hardware,
@@ -159,11 +164,26 @@ export class BackendRuntime implements Runtime {
         logCommandEvent(env.type, d)
         if (!d.sandbox && typeof d.id === 'string') {
           const { reason, ...twin } = d
-          void reason
           set((s) => ({ devices: { ...s.devices, [d.id as string]: twin as unknown as DeviceTwin } }))
+          const last = (twin as unknown as DeviceTwin).last_command
+          if (typeof reason === 'string' && /confirmed/i.test(reason) && last?.source === 'conduit_intent_engine') {
+            recordPhysicalOutcome(d.id, last.action, true, reason)
+          }
         }
         break
       }
+      case 'mode_action': {
+        const device = String(d.device ?? '')
+        const action = String(d.action ?? '')
+        const valid = d.status === 'CONFIRMED'
+        if (applyDigitalCommand(device, action, valid ? 'confirmed' : 'rejected')) {
+          pushLog({ channel: 'command', level: valid ? 'ok' : 'warn', title: `Mode control ${valid ? 'executed' : 'rejected'}`, detail: String(d.detail ?? `${device} ${action}`), code: 'MODE_ACTION' })
+        }
+        break
+      }
+      case 'workspace_changed':
+        void this.loadSettings()
+        break
       case 'analytics_updated':
         void this.refreshAnalytics()
         break
@@ -206,6 +226,13 @@ export class BackendRuntime implements Runtime {
   async cancel() {
     this.send('cancel')
   }
+  async setWorkspaceMode(mode: string, zones: Zone[]) {
+    const settings: AppSettings = { ...get().settings, workspace_mode: mode, intent: { ...get().settings.intent, zones } }
+    set({ activeMode: (getMode(mode)?.id ?? null) as ModeId | null, zones, settings })
+    const r = await this.safe(() => this.api<AppSettings>('/api/settings', 'PUT', settings))
+    if (r) set({ settings: r, zones: r.intent.zones })
+  }
+
   async setInteractionMode(m: 'conduit' | 'baseline') {
     const r = await this.safe(() => this.api('/api/interaction/mode', 'POST', { mode: m }))
     if (r) set({ interactionMode: m })
@@ -233,7 +260,7 @@ export class BackendRuntime implements Runtime {
     if (s) set({ analytics: s })
   }
   async startSession(mode: 'baseline' | 'conduit', note: string) {
-    await this.safe(() => this.api('/api/analytics/session/start', 'POST', { mode, note }))
+    await this.safe(() => this.api('/api/analytics/session/start', 'POST', { mode, note, workspace: get().activeMode ?? undefined }))
     await this.refreshAnalytics()
   }
   async stopSession() {

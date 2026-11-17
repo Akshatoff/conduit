@@ -51,6 +51,7 @@ export function defaultIntentConfig(): IntentConfig {
 
 export function defaultSettings(): AppSettings {
   return {
+    workspace_mode: 'hospital',
     hardware_mode: 'simulation',
     interaction_mode: 'conduit',
     esp32: { host: '', port: 80, timeout_s: 2.0 },
@@ -60,7 +61,10 @@ export function defaultSettings(): AppSettings {
   }
 }
 
-export function toggleAction(device: string, current: string | null | undefined): string {
+export function toggleAction(device: string, current: string | null | undefined, action?: string | null): string {
+  // Mode controls may declare an explicit action (e.g. OPEN_RECORD). Physical controls without
+  // one keep the historical toggle semantics.
+  if (action) return action
   if (device === 'access') return current === 'UNLOCKED' ? 'LOCK' : 'UNLOCK'
   return current === 'ON' ? 'OFF' : 'ON'
 }

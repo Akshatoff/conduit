@@ -5,6 +5,10 @@ import { createRoot } from 'react-dom/client'
 import App from '../src/App'
 import { rt } from '../src/runtime'
 import { useConduit } from '../src/store'
+import { enterModeLocal } from '../src/modes/actions'
+import { getMode } from '../src/modes/registry'
+import type { ModeId } from '../src/modes/types'
+import type { SecondHand, VisionFrame } from '../src/core/types'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -38,7 +42,8 @@ async function main() {
   await act(async () => sleep(800))
   check('browser runtime selected when backend absent', S().runtimeKind === 'browser')
   const text = () => document.body.textContent ?? ''
-  check('Live Interaction renders', /Intent Engine/.test(text()) && /CONDUIT/.test(text()))
+  check('environment selection renders first', S().page === 'modes' && /Choose your environment/.test(text()) && /Hospital/.test(text()) && /Semiconductor/.test(text()))
+  check('all five environments are offered', (text().match(/Enter mode/g) ?? []).length === 5)
 
   for (const [page, needle] of [['twin', 'Confirmed state'], ['analytics', 'No test results yet'], ['settings', 'Intent thresholds'], ['live', 'What the system believes']] as const) {
     await act(async () => { useConduit.setState({ page }); await sleep(150) })
@@ -64,19 +69,24 @@ async function main() {
 
   // ---- accidental swipe through zones must not execute anything
   await rt().setPointerPinch(false)
-  await hold(0.5, 0.85, 3.2) // leave zone, wait out cooldown / result hold
+  // neutral (non-activation) pose outside the zones: wait out the result hold without deactivating
+  useConduit.setState({ pointer: { ...S().pointer, gesture: 'point' } })
+  await hold(0.5, 0.85, 2.6)
   const before = S().devices.lighting.confirmed_state + S().devices.access.confirmed_state
   await move([0.02, 0.3], [0.98, 0.3], 0.5)
   await hold(0.98, 0.3, 0.3)
+  useConduit.setState({ pointer: { ...S().pointer, gesture: 'open_palm' } })
   check('swipe across zones executes nothing', S().devices.lighting.confirmed_state + S().devices.access.confirmed_state === before)
   check('rejection logged with reason', S().log.some((l) => l.code === 'TRANSIT'))
 
   // ---- analytics session
   await act(async () => { await rt().startSession('conduit', 'smoke') })
   await act(async () => { await rt().startTrial('unintended', null, 'swipe') })
+  useConduit.setState({ pointer: { ...S().pointer, gesture: 'point' } })
   await hold(0.5, 0.85, 1.0)
   await move([0.02, 0.3], [0.98, 0.3], 0.5)
   await hold(0.98, 0.3, 0.3)
+  useConduit.setState({ pointer: { ...S().pointer, gesture: 'open_palm' } })
   await act(async () => { await rt().endTrial() })
   await act(async () => { await rt().stopSession() })
   const m = S().analytics!.by_mode.conduit
@@ -84,6 +94,51 @@ async function main() {
   check('intent latency measured', (m.avg_intent_latency_ms ?? -1) >= 0)
   const csv = await rt().exportCsv()
   check('CSV export has header + 1 trial', csv.trim().split('\n').length === 2 && csv.startsWith('session_id,mode'))
+
+  // ---- multi-mode: enter hospital via the environment screen, then drive a digital control
+  await act(async () => { useConduit.setState({ page: 'modes' }); await sleep(150) })
+  const enterBtn = Array.from(document.querySelectorAll('button')).find((b) => /Enter mode/.test(b.textContent ?? ''))
+  check('environment card has an Enter mode action', !!enterBtn)
+  await act(async () => { enterBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true })); await sleep(250) })
+  check('entering hospital loads its controls + zones', S().activeMode === 'hospital' && S().zones.length === 8, `${S().activeMode} zones=${S().zones.length}`)
+  check('camera pipeline was not reset by entering a mode', S().camera.state === 'running')
+  check('mode workspace keeps the large camera stage', document.querySelector('[data-camera-fill="true"]') !== null)
+  check('mode workspace is decluttered by default', !/Why this environment/.test(text()) && !/Analytics categories/.test(text()) && !/Demonstration script/.test(text()))
+  const dashboardBtn = Array.from(document.querySelectorAll('button')).find((b) => (b.textContent ?? '').trim() === 'Dashboard')
+  check('mode workspace offers a collapsed dashboard', !!dashboardBtn)
+  await act(async () => { dashboardBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true })); await sleep(200) })
+  check('hospital dashboard opens on demand with its fictional-data banner', /FICTIONAL DEMONSTRATION DATA/.test(text()) && /Patient information/.test(text()))
+  const timerZone = S().zones.find((z) => z.id === 'hospital.timer')!
+  const timerX = (timerZone.x0 + timerZone.x1) / 2
+  const timerY = (timerZone.y0 + timerZone.y1) / 2
+  await rt().setPointerPinch(false)
+  await hold(0.5, 0.82, 1.2)
+  await move([0.5, 0.82], [0.5, timerY], 0.6)
+  await move([0.5, timerY], [timerX, timerY], 0.5)
+  await hold(timerX, timerY, 1.3)
+  check('hospital digital control reaches AWAITING_CONFIRMATION', S().intent.state === 'AWAITING_CONFIRMATION', `${S().intent.state}: ${S().intent.reason}`)
+  await hold(timerX, timerY, 0.6, true)
+  await sleep(500)
+  check('digital action confirmed in the mode layer (timer runs)', S().modeState.hospital.timer.running && S().modeState.hospital.history.some((h) => h.source === 'intent' && h.status === 'confirmed'), JSON.stringify(S().modeState.hospital.history.slice(0, 1)))
+  check('digital action never changes the physical twin', S().devices.lighting.last_command === null || S().devices.lighting.last_command?.source !== 'conduit_intent_engine' || S().devices.lighting.confirmed_state === 'OFF')
+  await act(async () => { useConduit.setState({ page: 'workspace' }); await sleep(200) })
+  check('workspace dashboard still renders after the gesture', /Patient information/.test(text()) && /Task checklist/.test(text()))
+
+  // ---- every environment dashboard renders from its own config
+  for (const [id, needle] of [
+    ['semiconductor', 'Simulated cleanroom workstation'],
+    ['industrial', 'Demo circulation pump'],
+    ['food_processing', 'Ingredient quantities'],
+    ['accessibility', 'Adaptive interaction surface'],
+  ] as [ModeId, string][]) {
+    await act(async () => {
+      enterModeLocal(id)
+      await rt().setWorkspaceMode(id, getMode(id)!.zones)
+      await sleep(200)
+    })
+    check(`${id} workspace renders its dashboard`, text().includes(needle) && S().activeMode === id && S().zones.length === getMode(id)!.zones.length, text().slice(0, 160))
+  }
+  check('mode switching kept one camera pipeline alive', S().camera.state === 'running')
 
   // ---- baseline comparison + simulated link failure
   await act(async () => { await rt().simulateFault(true) })
@@ -94,6 +149,124 @@ async function main() {
   await act(async () => { await rt().testDevice('lighting', 'ON') })
   check('hardware mode w/o ESP32 never fakes an ack', S().devices.lighting.confirmed_state === 'UNKNOWN' && S().devices.lighting.last_ack === null, JSON.stringify(S().devices.lighting))
   await act(async () => { await rt().stopVision() })
+
+  // ---- per-mode signature gesture screens (view/navigation only; injected frames, no engine run)
+  let ts = 1000
+  const frameAt = (x: number, y: number, gesture = 'open_palm', orientation = 0, second: SecondHand | null = null): VisionFrame => ({
+    timestamp: ts,
+    hand_detected: true,
+    handedness: 'Right',
+    position: { x, y },
+    gesture,
+    pinch_distance: gesture === 'pinch' ? 0.04 : 0.7,
+    velocity: 0.1,
+    stability: 0.95,
+    fps: 30,
+    tracking_quality: 0.95,
+    features: { orientation_deg: orientation },
+    second_hand: second,
+  })
+  const secondAt = (x: number, y: number): SecondHand => ({
+    hand_detected: true,
+    handedness: 'Left',
+    position: { x, y },
+    gesture: 'open_palm',
+    pinch_distance: 0.7,
+    orientation_deg: 0,
+    features: null,
+  })
+  const push = async (f: VisionFrame) => {
+    ts += 0.05
+    await act(async () => {
+      useConduit.setState({ frame: { ...f, timestamp: ts } })
+      await sleep(40)
+    })
+  }
+  const neutral = async () => {
+    await act(async () => {
+      useConduit.setState({ intent: { ...S().intent, state: 'READY', active: true, target: null, target_label: null, action: null } })
+      await sleep(60)
+    })
+  }
+  const gotoMode = async (id: ModeId) => {
+    await act(async () => {
+      enterModeLocal(id)
+      await rt().setWorkspaceMode(id, getMode(id)!.zones)
+      useConduit.setState({ page: 'workspace' })
+      await sleep(200)
+    })
+    await neutral()
+  }
+  const openSignature = async () => {
+    const b = Array.from(document.querySelectorAll('button')).find(
+      (el) => /Signature screen/.test(el.textContent ?? '') && el.getAttribute('aria-pressed') !== 'true',
+    )
+    if (b) await act(async () => { b.dispatchEvent(new MouseEvent('click', { bubbles: true })); await sleep(200) })
+    return !!b
+  }
+  const closeSignature = async () => {
+    const b = document.querySelector('button[aria-label="Close signature screen"]')
+    if (b) await act(async () => { b.dispatchEvent(new MouseEvent('click', { bubbles: true })); await sleep(150) })
+  }
+
+  await gotoMode('hospital')
+  check('signature screen opens from the camera workspace', await openSignature())
+  await push(frameAt(0.5, 0.45))
+  check('hospital signature view is visible', /Imaging · gesture view/.test(text()))
+  const logBefore = S().log.length
+  const devicesBefore = JSON.stringify(S().devices)
+  await push(frameAt(0.5, 0.45, 'open_palm', 0, secondAt(0.7, 0.45)))
+  await push(frameAt(0.5, 0.45, 'open_palm', 0, secondAt(0.82, 0.45)))
+  check('two-hand spread zooms the hospital image', /TWO-HAND · ZOOM/.test(text()), text().slice(0, 240))
+  await push(frameAt(0.3, 0.45))
+  for (let i = 1; i <= 6; i++) await push(frameAt(0.3 + i * 0.09, 0.45))
+  check('horizontal swipe changes the hospital image', /image 2\/3/.test(text()), text().slice(0, 300))
+  await push(frameAt(0.5, 0.45, 'pinch'))
+  await push(frameAt(0.6, 0.52, 'pinch'))
+  check('pinch-drag pans without issuing a command', /PINCH-DRAG · PAN/.test(text()) && S().log.length === logBefore && JSON.stringify(S().devices) === devicesBefore)
+
+  await gotoMode('semiconductor')
+  await openSignature()
+  await push(frameAt(0.4, 0.45,
+    'open_palm', 0, secondAt(0.6, 0.45)))
+  await push(frameAt(0.3, 0.45, 'open_palm', 0, secondAt(0.75, 0.45)))
+  check('semiconductor two-hand spread raises wafer detail', /TWO-HAND SPREAD · ZOOM IN/.test(text()) && /% detail/.test(text()), text().slice(0, 260))
+  await push(frameAt(0.3, 0.45, 'pinch'))
+  await push(frameAt(0.42, 0.55, 'pinch'))
+  check('semiconductor single-hand pinch fallback pans', /PINCH-DRAG · PAN/.test(text()))
+
+  await gotoMode('industrial')
+  await openSignature()
+  await push(frameAt(0.5, 0.5, 'open_palm', 0))
+  await push(frameAt(0.5, 0.5, 'open_palm', 28))
+  check('wrist rotation turns the industrial model', /WRIST ROTATE · MODEL/.test(text()) && /2[0-9]°/.test(text()), text().slice(0, 260))
+  await push(frameAt(0.3, 0.6))
+  for (let i = 1; i <= 6; i++) await push(frameAt(0.3 + i * 0.09, 0.6))
+  check('horizontal swipe pages the repair steps', /view step 2\/5/.test(text()), text().slice(0, 300))
+  await push(frameAt(0.27, 0.65, 'pinch'))
+  check('pinch on a component opens its information', /Drive motor/.test(text()) && /simulated component/.test(text()), text().slice(0, 360))
+
+  await gotoMode('food_processing')
+  await openSignature()
+  await push(frameAt(0.7, 0.34))
+  const angles = [30, 60, 90, 120]
+  for (const a of angles) await push(frameAt(0.5 + 0.2 * Math.cos((a * Math.PI) / 180), 0.34 + 0.2 * Math.sin((a * Math.PI) / 180)))
+  check('circular hand motion adjusts the food timer', /CLOCKWISE · ADD TIME/.test(text()) && !/TARGET 03:00/.test(text()), text().slice(0, 300))
+  await push(frameAt(0.3, 0.8))
+  for (let i = 1; i <= 6; i++) await push(frameAt(0.3 + i * 0.09, 0.8))
+  check('lower-edge swipe pages preparation steps', /SWIPE → NEXT PREP STEP/.test(text()) && /2\/5 ·/.test(text()), text().slice(0, 300))
+  await push(frameAt(0.5, 0.34, 'pinch'))
+  check('pinch starts the simulated preparation timer', /PINCH · TIMER CONFIRMED/.test(text()) && /counting down/.test(text()), text().slice(0, 300))
+
+  await gotoMode('accessibility')
+  await openSignature()
+  await push(frameAt(0.3, 0.35))
+  check('accessibility signature screen shows the adaptive panel grid', /hand focus/.test(text()) && /SELECT \/ READ still need/.test(text()), text().slice(0, 320))
+  await push(frameAt(0.32, 0.36))
+  check('adaptive panel focus is preview only', /Preview only/.test(text()))
+
+  await closeSignature()
+  check('signature screen closes without disturbing the workspace', !/Signature screen/.test(document.querySelector('button[aria-pressed="true"]')?.textContent ?? '') && !!document.querySelector('[data-camera-fill="true"]'))
   console.log(failed ? `\n${failed} UI smoke check(s) FAILED` : '\nAll UI smoke checks passed')
   process.exit(failed ? 1 : 0)
 }

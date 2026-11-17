@@ -5,13 +5,16 @@
 
 import { LocalAnalytics } from '../core/analytics'
 import { BaselineController } from '../core/baseline'
-import { defaultSettings } from '../core/config'
+import { DEVICE_SPECS, defaultSettings } from '../core/config'
 import { DeviceController } from '../core/devices'
 import { IntentEngine } from '../core/intentEngine'
 import { PositionSmoother, extractFeatures, makeHand } from '../core/landmarks'
 import { TrajectoryAnalyzer } from '../core/trajectory'
-import type { AppSettings, CommandRequest, IntentEvent, IntentSnapshot, InteractionInput, VisionFrame } from '../core/types'
+import type { AppSettings, CommandRequest, CommandResult, IntentEvent, IntentSnapshot, InteractionInput, SecondHand, VisionFrame, Zone } from '../core/types'
 import { idleSnapshot, pushLog, useConduit } from '../store'
+import { applyDigitalCommand, recordPhysicalOutcome } from '../modes/actions'
+import { digitalControl, getMode } from '../modes/registry'
+import type { ModeId } from '../modes/types'
 import { logCommandEvent, logIntentEvent } from './logging'
 import type { Runtime } from './types'
 
@@ -46,9 +49,11 @@ export class LocalRuntime implements Runtime {
   private baseline: BaselineController
   private analytics = new LocalAnalytics()
   private smoother = new PositionSmoother(0.5)
+  private secondSmoother = new PositionSmoother(0.5)
   private view = new TrajectoryAnalyzer()
   private trail: number[][] = []
   private lastGesture = 'none'
+  private lastPrimary: { x: number; y: number } | null = null
   private missed = 0
 
   private video: HTMLVideoElement
@@ -81,6 +86,9 @@ export class LocalRuntime implements Runtime {
 
   async init() {
     set({
+      // The operator must explicitly enter an environment: persisted zone geometry alone does not
+      // mean a mode dashboard is loaded (the app opens on the environment-selection screen).
+      activeMode: null,
       settings: this.settings, zones: this.settings.intent.zones, interactionMode: this.settings.interaction_mode, hardwareMode: this.settings.hardware_mode,
       hardwareInfo: this.settings.esp32, devices: { ...this.controller.twin }, analytics: this.analytics.summary(), link: 'open',
     })
@@ -175,7 +183,7 @@ export class LocalRuntime implements Runtime {
     const { FilesetResolver, HandLandmarker } = await import('@mediapipe/tasks-vision')
     const fileset = await FilesetResolver.forVisionTasks(WASM_BASE)
     const mk = (delegate: 'GPU' | 'CPU') =>
-      HandLandmarker.createFromOptions(fileset, { baseOptions: { modelAssetPath: MODEL_URL, delegate }, runningMode: 'VIDEO', numHands: 1, minHandDetectionConfidence: 0.6, minHandPresenceConfidence: 0.5, minTrackingConfidence: 0.5 })
+      HandLandmarker.createFromOptions(fileset, { baseOptions: { modelAssetPath: MODEL_URL, delegate }, runningMode: 'VIDEO', numHands: 2, minHandDetectionConfidence: 0.6, minHandPresenceConfidence: 0.5, minTrackingConfidence: 0.5 })
     try {
       return (await mk('GPU')) as unknown as Landmarker
     } catch {
@@ -224,11 +232,25 @@ export class LocalRuntime implements Runtime {
       const t = performance.now()
       try {
         const res = this.landmarker.detectForVideo(v, t)
-        const lm = res.landmarks?.[0] as { x: number; y: number; z: number }[] | undefined
-        const cat = res.handedness?.[0]?.[0]
+        const hands = res.landmarks as { x: number; y: number; z: number }[][] | undefined
+        // Keep the same physical hand as primary while two hands are visible. The Intent Engine
+        // must not see a left/right identity swap just because detection order changed.
+        let pi = 0
+        if (hands && hands.length > 1 && this.lastPrimary) {
+          const dist = (h: { x: number; y: number }[]) => {
+            const p = h[9]
+            return (1 - p.x - this.lastPrimary!.x) ** 2 + (p.y - this.lastPrimary!.y) ** 2
+          }
+          pi = dist(hands[0]) <= dist(hands[1]) ? 0 : 1
+        }
+        const lm = hands?.[pi]
+        const lm2 = hands?.length === 2 ? hands[pi === 0 ? 1 : 0] : undefined
+        const cat = res.handedness?.[pi]?.[0]
+        const cat2 = res.handedness?.[hands?.length === 2 ? (pi === 0 ? 1 : 0) : 1]?.[0]
         // mirror x so everything is in selfie (mirrored) space, matching the displayed video
         const pts = lm ? lm.map((p) => [1 - p.x, p.y, p.z]) : null
-        this.processDetection(pts, cat?.categoryName ?? 'Unknown', cat?.score ?? 1, t / 1000)
+        const pts2 = lm2 ? lm2.map((p) => [1 - p.x, p.y, p.z]) : null
+        this.processDetection(pts, cat?.categoryName ?? 'Unknown', cat?.score ?? 1, t / 1000, pts2, cat2?.categoryName ?? 'Unknown', cat2?.score ?? 1)
       } catch (e) {
         pushLog({ channel: 'system', level: 'error', title: 'Tracking error', detail: String(e) })
       }
@@ -236,23 +258,37 @@ export class LocalRuntime implements Runtime {
     this.raf = requestAnimationFrame(this.cameraLoop)
   }
 
-  private processDetection(points: number[][] | null, handedness: string, score: number, t: number) {
+  private processDetection(points: number[][] | null, handedness: string, score: number, t: number, secondPoints: number[][] | null = null, secondHandedness = 'Unknown', secondScore = 1) {
     const dt = this.lastFrameAt ? t - this.lastFrameAt : 0.033
     this.lastFrameAt = t
     this.fps += 0.1 * (1 / Math.max(dt, 1e-3) - this.fps)
     let frame: VisionFrame
     if (!points) {
       this.smoother.reset()
+      this.secondSmoother.reset()
+      this.lastPrimary = null
       this.view.reset()
       this.missed = Math.min(1, this.missed + 0.2)
-      frame = { timestamp: t, hand_detected: false, handedness: null, position: null, gesture: 'none', pinch_distance: null, velocity: 0, stability: 0, fps: this.fps, tracking_quality: 0, features: null }
+      frame = { timestamp: t, hand_detected: false, handedness: null, position: null, gesture: 'none', pinch_distance: null, velocity: 0, stability: 0, fps: this.fps, tracking_quality: 0, features: null, second_hand: null }
     } else {
       this.missed = Math.max(0, this.missed - 0.1)
       const f = extractFeatures(points, handedness, score, 1 - this.missed)
+      this.lastPrimary = { x: f.palm_center[0], y: f.palm_center[1] }
       const [sx, sy] = this.smoother.update(f.palm_center[0], f.palm_center[1])
       this.view.add(t, sx, sy)
       const m = this.view.metrics()
-      frame = { timestamp: t, hand_detected: true, handedness, position: { x: sx, y: sy }, gesture: f.gesture, pinch_distance: f.pinch_distance, velocity: m.speed, stability: m.stability, fps: this.fps, tracking_quality: f.tracking_confidence, features: f }
+      let second: SecondHand | null = null
+      if (secondPoints) {
+        const f2 = extractFeatures(secondPoints, secondHandedness, secondScore, 1 - this.missed)
+        const [s2x, s2y] = this.secondSmoother.update(f2.palm_center[0], f2.palm_center[1])
+        second = {
+          hand_detected: true, handedness: secondHandedness, position: { x: s2x, y: s2y }, gesture: f2.gesture,
+          pinch_distance: f2.pinch_distance, orientation_deg: f2.orientation_deg, features: f2,
+        }
+      } else {
+        this.secondSmoother.reset()
+      }
+      frame = { timestamp: t, hand_detected: true, handedness, position: { x: sx, y: sy }, gesture: f.gesture, pinch_distance: f.pinch_distance, velocity: m.speed, stability: m.stability, fps: this.fps, tracking_quality: f.tracking_confidence, features: f, second_hand: second }
     }
     this.ingest(frame)
   }
@@ -322,7 +358,45 @@ export class LocalRuntime implements Runtime {
   }
 
   private async dispatch(req: CommandRequest) {
+    // Digital controls belong to the active mode's UI. They are authorised by the same Intent
+    // Engine, but they never touch the device controller and are labelled as digital.
+    if (!DEVICE_SPECS[req.device]) {
+      await this.dispatchDigital(req)
+      return
+    }
     const res = await this.controller.execute({ command_id: req.command_id, device: req.device, action: req.action, source: req.source, confidence: req.confidence })
+    this.analytics.recordCommand(res)
+    if (req.source === 'conduit_intent_engine') recordPhysicalOutcome(req.device, req.action, res.status === 'CONFIRMED', res.detail)
+    this.pushAnalytics()
+    if (req.source === 'conduit_intent_engine' && get().interactionMode === 'conduit') {
+      for (const ev of this.engine.notifyCommandResult(res.status === 'CONFIRMED', res.detail, now())) this.handleEvent(ev)
+    }
+  }
+
+  private async dispatchDigital(req: CommandRequest) {
+    const t0 = performance.now()
+    const def = getMode(get().activeMode)
+    const control = def ? digitalControl(def, req.device) : undefined
+    const valid = !!control && (!control.action || control.action === req.action)
+    await new Promise((r) => setTimeout(r, 40))
+    const latency = performance.now() - t0
+    const res: CommandResult = {
+      command_id: req.command_id, device: req.device, action: req.action, source: req.source,
+      status: valid ? 'CONFIRMED' : 'REJECTED',
+      detail: valid
+        ? `Digital control '${control!.label}' executed in the mode layer (no physical device)`
+        : `Action '${req.action}' is not part of the active mode`,
+      confirmed_state: valid ? req.action : null, simulated: true, latency_ms: latency, ack_latency_ms: latency,
+      acknowledged: valid, executed_on: 'mode_ui', digital: true,
+    }
+    logCommandEvent('command_sent', { ...res, status: 'SENT', sandbox: true } as unknown as Record<string, unknown>)
+    if (valid) {
+      logCommandEvent('command_acknowledged', { ...res, actual_state: req.action, ack_latency_ms: latency, sandbox: true } as unknown as Record<string, unknown>)
+      applyDigitalCommand(req.device, req.action, 'confirmed')
+    } else {
+      logCommandEvent('command_rejected', res as unknown as Record<string, unknown>)
+      applyDigitalCommand(req.device, req.action, 'rejected')
+    }
     this.analytics.recordCommand(res)
     this.pushAnalytics()
     if (req.source === 'conduit_intent_engine' && get().interactionMode === 'conduit') {
@@ -359,6 +433,16 @@ export class LocalRuntime implements Runtime {
     this.settings = { ...this.settings, interaction_mode: m }
     this.persist()
     set({ interactionMode: m, settings: this.settings, intent: m === 'baseline' ? { ...idleSnapshot(), state: 'BASELINE', active: true, reason: 'Baseline mode: gestures map directly to commands (no intent evaluation)' } : idleSnapshot() })
+  }
+
+  async setWorkspaceMode(mode: string, zones: Zone[]) {
+    const next = { ...this.settings, workspace_mode: mode, intent: { ...this.settings.intent, zones } }
+    this.settings = next
+    this.persist()
+    this.engine.setConfig(next.intent)
+    this.engine.reset()
+    this.baseline.reset()
+    set({ settings: next, zones, activeMode: (getMode(mode)?.id ?? null) as ModeId | null })
   }
 
   async testDevice(id: string, action: string) {
@@ -424,7 +508,9 @@ export class LocalRuntime implements Runtime {
   }
   async startSession(mode: 'baseline' | 'conduit', note: string) {
     if (get().interactionMode !== mode) await this.setInteractionMode(mode)
-    this.guard(() => this.analytics.startSession(mode, note))
+    // Prefer the entered environment; otherwise the last environment whose zones are loaded.
+    const workspace = get().activeMode ?? getMode(get().settings.workspace_mode)?.id ?? 'hospital'
+    this.guard(() => this.analytics.startSession(mode, note, workspace))
   }
   async stopSession() {
     this.guard(() => this.analytics.stopSession())
