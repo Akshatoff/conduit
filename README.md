@@ -36,9 +36,14 @@ bays and accessibility-oriented environments — anywhere touching a control sur
 
 ## Operational environments
 
-The application opens on a mode-selection screen. Entering an environment loads its dashboard, virtual
-controls (camera zones), workflows, demo data and device mappings into the **same** Intent Engine — the
-camera is not restarted and no second engine is created.
+The application opens on a mode-selection screen. Entering an environment loads its controls (camera
+zones), workflow, demo data and device mappings into the **same** Intent Engine — the camera is not
+restarted and no second engine is created.
+
+The workspace is deliberately camera-first: the live camera fills roughly 80% of the viewport, with only a
+compact current-step/recent-action rail beside it. The full dashboard, virtual-control list, interaction
+history and demonstration guide live behind one-click **Details** tabs instead of competing with the
+camera for space.
 
 | Environment | Problem it demonstrates | Highlights | Hardware |
 |---|---|---|---|

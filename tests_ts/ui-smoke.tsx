@@ -99,8 +99,14 @@ async function main() {
   const enterBtn = Array.from(document.querySelectorAll('button')).find((b) => /Enter mode/.test(b.textContent ?? ''))
   check('environment card has an Enter mode action', !!enterBtn)
   await act(async () => { enterBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true })); await sleep(250) })
-  check('entering hospital loads its dashboard + zones', S().activeMode === 'hospital' && S().zones.length === 8 && /FICTIONAL DEMONSTRATION DATA/.test(text()), `${S().activeMode} zones=${S().zones.length}`)
+  check('entering hospital loads its controls + zones', S().activeMode === 'hospital' && S().zones.length === 8, `${S().activeMode} zones=${S().zones.length}`)
   check('camera pipeline was not reset by entering a mode', S().camera.state === 'running')
+  check('mode workspace keeps the large camera stage', document.querySelector('[data-camera-fill="true"]') !== null)
+  check('mode workspace is decluttered by default', !/Why this environment/.test(text()) && !/Analytics categories/.test(text()) && !/Demonstration script/.test(text()))
+  const dashboardBtn = Array.from(document.querySelectorAll('button')).find((b) => (b.textContent ?? '').trim() === 'Dashboard')
+  check('mode workspace offers a collapsed dashboard', !!dashboardBtn)
+  await act(async () => { dashboardBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true })); await sleep(200) })
+  check('hospital dashboard opens on demand with its fictional-data banner', /FICTIONAL DEMONSTRATION DATA/.test(text()) && /Patient information/.test(text()))
   const timerZone = S().zones.find((z) => z.id === 'hospital.timer')!
   const timerX = (timerZone.x0 + timerZone.x1) / 2
   const timerY = (timerZone.y0 + timerZone.y1) / 2
@@ -115,7 +121,7 @@ async function main() {
   check('digital action confirmed in the mode layer (timer runs)', S().modeState.hospital.timer.running && S().modeState.hospital.history.some((h) => h.source === 'intent' && h.status === 'confirmed'), JSON.stringify(S().modeState.hospital.history.slice(0, 1)))
   check('digital action never changes the physical twin', S().devices.lighting.last_command === null || S().devices.lighting.last_command?.source !== 'conduit_intent_engine' || S().devices.lighting.confirmed_state === 'OFF')
   await act(async () => { useConduit.setState({ page: 'workspace' }); await sleep(200) })
-  check('workspace renders the hospital dashboard', /Patient information/.test(text()) && /Task checklist/.test(text()))
+  check('workspace dashboard still renders after the gesture', /Patient information/.test(text()) && /Task checklist/.test(text()))
 
   // ---- every environment dashboard renders from its own config
   for (const [id, needle] of [

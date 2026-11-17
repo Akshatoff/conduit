@@ -139,6 +139,10 @@ endpoint, no parallel control path. `GET /api/system/status` now also reports `w
 
 ## 5. Analytics
 
+The workspace is camera-first: the stage takes ~80% of the viewport width/height, while a narrow rail
+shows the current workflow step, timer and the two most recent actions. Dashboard, controls, history and
+demo guide are collapsed behind **Details** tabs and are not rendered until requested.
+
 Every session and trial now stores `workspace` (the active environment).
 
 * New metric slice `by_workspace` in the summary; Environment comparison table in the UI.

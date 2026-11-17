@@ -36,6 +36,10 @@ function draw(ctx: CanvasRenderingContext2D, W: number, H: number, time: number)
   const baseline = interactionMode === 'baseline'
   const stateHex = HEX[STATE_TONE[intent.state]]
   const pulse = 0.5 + 0.5 * Math.sin(time / 220)
+  // Overlay typography and handles scale with the stage so the large workspace camera stays legible.
+  const k = Math.max(1, Math.min(1.8, W / 1000))
+  const pad = Math.round(14 * k)
+  const tick = Math.round(14 * k)
 
   // ---------------------------------------------------------------- control zones
   for (const z of zones) {
@@ -103,7 +107,7 @@ function draw(ctx: CanvasRenderingContext2D, W: number, H: number, time: number)
       }
     }
     ctx.lineWidth = lw
-    roundRect(ctx, x, y, w, h, 14)
+    roundRect(ctx, x, y, w, h, Math.round(14 * k))
     ctx.fillStyle = fill
     ctx.fill()
     ctx.strokeStyle = stroke
@@ -112,21 +116,20 @@ function draw(ctx: CanvasRenderingContext2D, W: number, H: number, time: number)
     // corner ticks give the zone a spatial "control surface" feel
     ctx.strokeStyle = stroke
     ctx.lineWidth = 3
-    const t = 14
     for (const [cx, cy, dx, dy] of [[x, y, 1, 1], [x + w, y, -1, 1], [x, y + h, 1, -1], [x + w, y + h, -1, -1]] as number[][]) {
       ctx.beginPath()
-      ctx.moveTo(cx + dx * t, cy)
+      ctx.moveTo(cx + dx * tick, cy)
       ctx.lineTo(cx, cy)
-      ctx.lineTo(cx, cy + dy * t)
+      ctx.lineTo(cx, cy + dy * tick)
       ctx.stroke()
     }
 
-    ctx.font = '600 12px Inter, system-ui, sans-serif'
+    ctx.font = `600 ${Math.round(12 * k)}px Inter, system-ui, sans-serif`
     ctx.textBaseline = 'top'
     ctx.fillStyle = 'rgba(234,241,250,0.92)'
-    ctx.fillText(fitText(ctx, z.label.toUpperCase(), w - 28), x + 14, y + 12)
+    ctx.fillText(fitText(ctx, z.label.toUpperCase(), w - pad * 2), x + pad, y + Math.round(12 * k))
     const dev = devices[z.device]
-    ctx.font = '500 11px ui-monospace, Menlo, Consolas, monospace'
+    ctx.font = `500 ${Math.round(11 * k)}px ui-monospace, Menlo, Consolas, monospace`
     ctx.fillStyle = 'rgba(135,150,170,0.95)'
     const digital = z.kind === 'digital'
     const st = digital
@@ -135,14 +138,15 @@ function draw(ctx: CanvasRenderingContext2D, W: number, H: number, time: number)
         ? `${dev.confirmed_state}${dev.simulated ? ' · sim' : ''}`
         : '—'
     ctx.textBaseline = 'bottom'
-    ctx.fillText(fitText(ctx, `state: ${st}`, w - 28), x + 14, y + h - 12)
+    ctx.fillText(fitText(ctx, `state: ${st}`, w - pad * 2), x + pad, y + h - Math.round(12 * k))
 
     if (banner) {
-      ctx.font = '700 11px Inter, system-ui, sans-serif'
+      ctx.font = `700 ${Math.round(11 * k)}px Inter, system-ui, sans-serif`
       ctx.textBaseline = 'middle'
       ctx.textAlign = 'center'
-      const bw = ctx.measureText(banner).width + 22
-      roundRect(ctx, x + w / 2 - bw / 2, y + h / 2 - 13, bw, 26, 13)
+      const bh = Math.round(26 * k)
+      const bw = ctx.measureText(banner).width + Math.round(22 * k)
+      roundRect(ctx, x + w / 2 - bw / 2, y + h / 2 - bh / 2, bw, bh, bh / 2)
       ctx.fillStyle = 'rgba(11,18,32,0.82)'
       ctx.fill()
       ctx.strokeStyle = stroke
@@ -153,13 +157,14 @@ function draw(ctx: CanvasRenderingContext2D, W: number, H: number, time: number)
       ctx.textAlign = 'left'
     }
     if (progress > 0) {
-      const bx = x + 14
-      const bw = w - 28
-      const by = y + h - 34
-      roundRect(ctx, bx, by, bw, 5, 3)
+      const bx = x + pad
+      const bw = w - pad * 2
+      const by = y + h - Math.round(30 * k)
+      const ph = Math.max(4, Math.round(5 * k))
+      roundRect(ctx, bx, by, bw, ph, ph / 2)
       ctx.fillStyle = 'rgba(11,18,32,0.8)'
       ctx.fill()
-      roundRect(ctx, bx, by, Math.max(6, bw * Math.min(1, progress)), 5, 3)
+      roundRect(ctx, bx, by, Math.max(6, bw * Math.min(1, progress)), ph, ph / 2)
       ctx.fillStyle = progressHex
       ctx.fill()
     }
@@ -195,7 +200,7 @@ function draw(ctx: CanvasRenderingContext2D, W: number, H: number, time: number)
       lm.forEach((p, i) => {
         const tip = [4, 8, 12, 16, 20].includes(i)
         ctx.beginPath()
-        ctx.arc(p[0] * W, p[1] * H, tip ? 4.5 : 3, 0, Math.PI * 2)
+        ctx.arc(p[0] * W, p[1] * H, (tip ? 4.5 : 3) * Math.min(1.5, k), 0, Math.PI * 2)
         ctx.fillStyle = tip ? HEX.teal : 'rgba(234,241,250,0.95)'
         ctx.fill()
       })
@@ -211,7 +216,7 @@ function draw(ctx: CanvasRenderingContext2D, W: number, H: number, time: number)
     const px = frame.position.x * W
     const py = frame.position.y * H
     ctx.beginPath()
-    ctx.arc(px, py, 13 + (intent.state === 'AWAITING_CONFIRMATION' ? 3 * pulse : 0), 0, Math.PI * 2)
+    ctx.arc(px, py, (13 + (intent.state === 'AWAITING_CONFIRMATION' ? 3 * pulse : 0)) * Math.min(1.5, k), 0, Math.PI * 2)
     ctx.strokeStyle = stateHex
     ctx.lineWidth = 3
     ctx.stroke()
@@ -223,7 +228,7 @@ function draw(ctx: CanvasRenderingContext2D, W: number, H: number, time: number)
     // activation ring
     if (intent.state === 'ACTIVATING') {
       ctx.beginPath()
-      ctx.arc(px, py, 24, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * intent.progress.activation)
+      ctx.arc(px, py, 24 * Math.min(1.5, k), -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * intent.progress.activation)
       ctx.strokeStyle = HEX.accent
       ctx.lineWidth = 4
       ctx.stroke()
@@ -231,7 +236,7 @@ function draw(ctx: CanvasRenderingContext2D, W: number, H: number, time: number)
   }
 }
 
-export function CameraStage() {
+export function CameraStage({ fill = false, className }: { fill?: boolean; className?: string } = {}) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const hostRef = useRef<HTMLDivElement>(null)
@@ -295,10 +300,15 @@ export function CameraStage() {
   const showHole = !running
 
   return (
-    <div className="overflow-hidden rounded-xl border border-line bg-black/60">
+    <div className={cn('overflow-hidden rounded-xl border border-line bg-black/60', fill && 'h-full', className)}>
       <div
         ref={wrapRef}
-        className={cn('relative aspect-[4/3] w-full select-none overflow-hidden bg-[#070d18]', pointerMode && 'cursor-none touch-none')}
+        data-camera-fill={fill || undefined}
+        className={cn(
+          'relative w-full select-none overflow-hidden bg-[#070d18]',
+          fill ? 'h-full min-h-[320px]' : 'aspect-[4/3]',
+          pointerMode && 'cursor-none touch-none',
+        )}
         onPointerMove={pointerMode ? (e) => rt().setPointer(...toXY(e), true) : undefined}
         onPointerLeave={pointerMode ? () => { rt().setPointer(0.5, 0.5, false); rt().setPointerPinch(false) } : undefined}
         onPointerDown={pointerMode ? (e) => { (e.target as Element).setPointerCapture?.(e.pointerId); rt().setPointerPinch(true) } : undefined}

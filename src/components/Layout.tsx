@@ -58,7 +58,12 @@ export function Layout({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-full flex-col">
       <header className="sticky top-0 z-20 border-b border-line bg-bg/85 backdrop-blur">
-        <div className="mx-auto flex max-w-[1500px] flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 lg:px-6">
+        <div
+          className={cn(
+            'mx-auto flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 lg:px-6',
+            page === 'workspace' ? 'max-w-[2400px]' : 'max-w-[1500px]',
+          )}
+        >
           <Logo />
           <nav className="ml-2 hidden items-center gap-1 md:flex" aria-label="Main">
             {NAV.map((n) => (
@@ -92,9 +97,21 @@ export function Layout({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-[1500px] flex-1 px-4 pb-24 pt-5 md:pb-10 lg:px-6">{children}</main>
+      <main
+        className={cn(
+          'mx-auto w-full flex-1 px-4 pb-24 md:pb-10 lg:px-6',
+          page === 'workspace' ? 'max-w-[2400px] pt-3' : 'max-w-[1500px] pt-5',
+        )}
+      >
+        {children}
+      </main>
 
-      <footer className="mx-auto hidden w-full max-w-[1500px] px-6 pb-6 text-[11px] leading-relaxed text-muted md:block">
+      <footer
+        className={cn(
+          'mx-auto hidden w-full px-6 pb-6 text-[11px] leading-relaxed text-muted md:block',
+          page === 'workspace' ? 'max-w-[2400px]' : 'max-w-[1500px]',
+        )}
+      >
         Conduit is a research prototype for isolated low-voltage demonstration electronics. It is not a certified medical, industrial or safety-critical control system and makes no claims about infection prevention or sterility. Camera data is processed locally and never recorded.
       </footer>
 
