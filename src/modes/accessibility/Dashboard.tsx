@@ -1,6 +1,7 @@
-import { Accessibility, Info, Maximize2, Minimize2, MousePointerClick, Settings2, Sparkles } from 'lucide-react'
+import { Accessibility, Info, Maximize2, Minimize2, MousePointerClick, Settings2 } from 'lucide-react'
 import { useState } from 'react'
 import { ModePanel, useModeState } from '../../components/mode/DashboardKit'
+import { AdaptivePanels } from '../../components/mode/signature'
 import { Btn, Card, Meter, Pill } from '../../components/ui'
 import type { IntentConfig, Zone } from '../../core/types'
 import { rt } from '../../runtime'
@@ -77,7 +78,6 @@ export function AccessibilityDashboard() {
   const zones = useConduit((s) => s.zones)
   const [large, setLarge] = useState(() => zones.some((z) => z.x1 - z.x0 > 0.41))
   if (!state) return null
-  const focused = CONTENT_ITEMS[state.focusIndex]
 
   const commit = (patch: Partial<IntentConfig>) => {
     const next = { ...settings, intent: { ...settings.intent, ...patch } }
@@ -124,43 +124,7 @@ export function AccessibilityDashboard() {
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
         <div className="space-y-4">
-          <ModePanel
-            title={state.panel === 'reading' ? `Reading view · ${focused.title}` : 'Demo panels'}
-            icon={<Sparkles className="size-4" />}
-            right={<Pill tone={state.panel === 'reading' ? 'accent' : 'neutral'}>{state.panel}</Pill>}
-          >
-            {state.panel === 'reading' ? (
-              <div className="space-y-3">
-                <p className="text-base leading-relaxed text-ink">{focused.body}</p>
-                <p className="text-xs leading-relaxed text-muted">{focused.body}</p>
-                <p className="rounded-lg border border-line/70 bg-bg/40 p-2.5 text-[11px] text-muted">
-                  The reading view enlarges the same text. It does not synthesise speech (out of scope for this prototype).
-                </p>
-              </div>
-            ) : (
-              <div className="grid gap-2 sm:grid-cols-2">
-                {CONTENT_ITEMS.map((item, i) => (
-                  <div
-                    key={item.id}
-                    className={cn(
-                      'rounded-lg border p-3',
-                      i === state.focusIndex ? 'border-[#b18cff]/70 bg-[#b18cff]/10' : state.panel === 'grid' ? 'border-line/70 bg-bg/40' : 'border-line/50 bg-bg/30',
-                    )}
-                  >
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-semibold text-ink">{item.title}</p>
-                      {i === state.focusIndex && <Pill tone="accent">focus</Pill>}
-                    </div>
-                    <p className="mt-1 line-clamp-3 text-[11px] leading-relaxed text-muted">{item.body}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-            <p className="mt-3 flex items-start gap-1.5 text-[10px] leading-snug text-muted">
-              <Info className="mt-px size-3.5 shrink-0 text-[#b18cff]" />
-              Use NEXT to move focus, SELECT to choose, READ for the larger view and BACK to return. Every action needs the configured confirmation gesture.
-            </p>
-          </ModePanel>
+          <AdaptivePanels compact />
 
           <ModePanel title="Configuration checklist" icon={<Settings2 className="size-4" />} right={<Pill tone="neutral">{state.checklistIndex}/{ACCESSIBILITY_MODE.checklist.length}</Pill>}>
             <ul className="space-y-1.5">
@@ -208,6 +172,16 @@ export function AccessibilityDashboard() {
                 hint="Minimum movement stability at the moment of selection."
                 onCommit={(v) => commit({ stability_threshold: v })}
               />
+              <Slider
+                label="Gesture sensitivity"
+                value={1 - intent.approach_threshold}
+                min={0.1}
+                max={0.8}
+                step={0.01}
+                format={(v) => `${Math.round(v * 100)}%`}
+                hint="Higher accepts subtler approaches to a control; it also makes accidental activation easier."
+                onCommit={(v) => commit({ approach_threshold: 1 - v })}
+              />
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block text-[11px] font-medium text-ink/90">
                   Activation gesture
@@ -221,14 +195,14 @@ export function AccessibilityDashboard() {
                   </select>
                 </label>
                 <label className="block text-[11px] font-medium text-ink/90">
-                  Confirmation gesture
+                  Alternative confirmation
                   <select
                     className="mt-1 w-full rounded-lg border border-line bg-bg/70 px-2.5 py-2 text-xs text-ink"
                     value={intent.gestures.confirm}
                     onChange={(e) => setGestures('confirm', e.target.value)}
                   >
-                    <option value="pinch">Pinch</option>
-                    <option value="point">Point</option>
+                    <option value="pinch">Pinch (default)</option>
+                    <option value="point">Point (alternative motor pattern)</option>
                   </select>
                 </label>
               </div>
@@ -240,6 +214,7 @@ export function AccessibilityDashboard() {
                 <Meter label="Confidence threshold" value={intent.min_confidence} tone="accent" hint={intent.min_confidence.toFixed(2)} />
                 <Meter label="Dwell" value={(intent.min_dwell_s - 0.2) / 1.8} tone="teal" hint={`${intent.min_dwell_s.toFixed(2)} s`} />
                 <Meter label="Stability" value={intent.stability_threshold} tone="warn" hint={intent.stability_threshold.toFixed(2)} />
+                <Meter label="Gesture sensitivity" value={1 - intent.approach_threshold} tone="teal" hint={`${Math.round((1 - intent.approach_threshold) * 100)}%`} />
               </div>
             </div>
           </ModePanel>

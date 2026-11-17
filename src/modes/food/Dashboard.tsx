@@ -1,5 +1,6 @@
 import { BellRing, CheckSquare, ClipboardList, CookingPot, ListOrdered, Scale, UtensilsCrossed } from 'lucide-react'
-import { ModePanel, ModeTimer, WorkflowRail, useModeState } from '../../components/mode/DashboardKit'
+import { ModePanel, WorkflowRail, useModeState } from '../../components/mode/DashboardKit'
+import { PrepTimer } from '../../components/mode/signature'
 import { Card, Meter, Pill } from '../../components/ui'
 import { cn } from '../../utils/cn'
 import { FOOD_MODE } from './config'
@@ -83,7 +84,7 @@ export function FoodDashboard() {
         </div>
 
         <div className="space-y-4">
-          <ModeTimer state={state} />
+          <PrepTimer compact />
 
           <ModePanel title="Quality-control checklist" icon={<CheckSquare className="size-4" />} right={<Pill tone={qcDone ? 'teal' : 'neutral'}>{state.checklistIndex}/{QC_ITEMS.length}</Pill>}>
             <ul className="space-y-1.5">

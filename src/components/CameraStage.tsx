@@ -234,6 +234,37 @@ function draw(ctx: CanvasRenderingContext2D, W: number, H: number, time: number)
       ctx.stroke()
     }
   }
+
+  // ---------------------------------------------------------------- optional second hand
+  // The Intent Engine never consumes this hand; it is drawn here for the mode signature screens.
+  const second = frame?.second_hand
+  if (second?.position) {
+    const lm2 = second.features?.landmarks
+    if (lm2 && lm2.length === 21) {
+      ctx.lineWidth = 1.5
+      ctx.strokeStyle = 'rgba(177,140,255,0.55)'
+      for (const [a, b] of HAND_CONNECTIONS) {
+        ctx.beginPath()
+        ctx.moveTo(lm2[a][0] * W, lm2[a][1] * H)
+        ctx.lineTo(lm2[b][0] * W, lm2[b][1] * H)
+        ctx.stroke()
+      }
+      lm2.forEach((p, i) => {
+        const tip = [4, 8, 12, 16, 20].includes(i)
+        ctx.beginPath()
+        ctx.arc(p[0] * W, p[1] * H, (tip ? 3.5 : 2.5) * Math.min(1.5, k), 0, Math.PI * 2)
+        ctx.fillStyle = tip ? '#b18cff' : 'rgba(234,241,250,0.7)'
+        ctx.fill()
+      })
+    }
+    const x2 = second.position.x * W
+    const y2 = second.position.y * H
+    ctx.beginPath()
+    ctx.arc(x2, y2, 10 * Math.min(1.5, k), 0, Math.PI * 2)
+    ctx.strokeStyle = '#b18cff'
+    ctx.lineWidth = 2
+    ctx.stroke()
+  }
 }
 
 export function CameraStage({ fill = false, className }: { fill?: boolean; className?: string } = {}) {
@@ -346,6 +377,7 @@ export function CameraStage({ fill = false, className }: { fill?: boolean; class
             <Pill tone="neutral" icon={<Hand className="size-3" />} className="bg-bg/80 backdrop-blur">
               {frame?.hand_detected ? `${GESTURE_LABEL[frame.gesture] ?? frame.gesture}${frame.handedness ? ` · ${frame.handedness}` : ''}` : 'No hand'}
             </Pill>
+            {frame?.second_hand && <Pill tone="accent" className="bg-bg/80 backdrop-blur">2 hands</Pill>}
             <Pill tone="neutral" className="bg-bg/80 font-mono backdrop-blur">{camera.fps.toFixed(0)} FPS</Pill>
           </div>
         )}

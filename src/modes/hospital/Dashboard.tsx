@@ -1,41 +1,10 @@
 import { Activity, BellRing, CheckSquare, ClipboardList, Eye, FileText, HeartPulse, ScanLine, Timer } from 'lucide-react'
 import { ModePanel, ModeTimer, WorkflowRail, useModeState } from '../../components/mode/DashboardKit'
+import { HospitalImaging } from '../../components/mode/signature'
 import { Card, Meter, Pill } from '../../components/ui'
 import { cn } from '../../utils/cn'
 import { HOSPITAL_MODE } from './config'
 import { DEMO_NOTICE, PATIENTS } from './demoData'
-
-function ImagingPlaceholder({ zoom }: { zoom: number }) {
-  const scale = [1, 1.6, 2.3][zoom] ?? 1
-  return (
-    <div className="relative overflow-hidden rounded-lg border border-line/70 bg-black/50">
-      <svg viewBox="0 0 320 220" className="h-64 w-full" aria-label="Sample placeholder image — not a diagnostic image">
-        <defs>
-          <radialGradient id="scanbg" cx="50%" cy="50%" r="65%">
-            <stop offset="0%" stopColor="#16324f" />
-            <stop offset="100%" stopColor="#060c16" />
-          </radialGradient>
-        </defs>
-        <rect width="320" height="220" fill="url(#scanbg)" />
-        <g transform={`translate(160 110) scale(${scale}) translate(-160 -110)`} opacity="0.9">
-          <ellipse cx="160" cy="110" rx="76" ry="62" fill="none" stroke="#4da3ff" strokeOpacity="0.8" strokeWidth="2" />
-          <ellipse cx="160" cy="106" rx="38" ry="48" fill="none" stroke="#42d6c5" strokeOpacity="0.55" strokeWidth="1.5" />
-          <path d="M160 58v96M124 110h72" stroke="#8796aa" strokeWidth="0.8" strokeDasharray="4 4" />
-          <circle cx="146" cy="96" r="9" fill="#16233a" stroke="#42d6c5" strokeOpacity="0.8" />
-          <circle cx="174" cy="118" r="11" fill="#16233a" stroke="#42d6c5" strokeOpacity="0.6" />
-          <path d="M96 150c22 16 106 16 128 0" fill="none" stroke="#2b4467" strokeWidth="2" />
-        </g>
-        <g opacity="0.8">
-          <path d="M12 12h10M12 12v10M308 12h-10M308 12v10M12 208h10M12 208v-10M308 208h-10M308 208v-10" stroke="#8796aa" strokeWidth="2" />
-        </g>
-      </svg>
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-gradient-to-t from-black/80 to-transparent px-3 pb-2 pt-6 text-[10px]">
-        <span className="font-mono text-warn">PLACEHOLDER · NOT DIAGNOSTIC</span>
-        <span className="font-mono text-ink/80">zoom {zoom === 0 ? '1×' : `${zoom + 1}×`}</span>
-      </div>
-    </div>
-  )
-}
 
 export function HospitalDashboard() {
   const state = useModeState()
@@ -112,12 +81,11 @@ export function HospitalDashboard() {
               </div>
             ) : panel === 'imaging' ? (
               <div className="space-y-2">
-                <ImagingPlaceholder zoom={state.zoom} />
+                <HospitalImaging compact />
                 <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted">
                   <ScanLine className="size-3.5 text-accent" />
-                  Sample/placeholder image. Select <b className="text-ink">IMAGING</b> again (with a new pinch) to cycle zoom. Nothing is loaded from a medical system.
+                  Gesture view opened by the authorised IMAGING control. Move horizontally to change image, pinch-drag to pan, spread two hands to zoom. Nothing is loaded from a medical system.
                 </div>
-                <Meter label="Sample zoom" value={(state.zoom + 1) / 3} tone="accent" hint={`${state.zoom + 1}×`} />
               </div>
             ) : (
               <div className="space-y-3">
@@ -200,7 +168,6 @@ export function HospitalDashboard() {
         <div className="mt-3 flex flex-wrap gap-2 text-[10px] text-muted">
           <span className="flex items-center gap-1"><Timer className="size-3" /> Timer: {state.timer.running ? 'running' : 'paused'}</span>
           <span>· Panel: {panel}</span>
-          <span>· Sample image zoom: {state.zoom + 1}×</span>
         </div>
       </Card>
     </div>

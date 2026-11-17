@@ -1,38 +1,10 @@
 import { Activity, AlertTriangle, BellRing, BookOpen, CheckSquare, Gauge, History, Wrench } from 'lucide-react'
 import { InteractionHistory, ModePanel, ModeTimer, WorkflowRail, useModeState } from '../../components/mode/DashboardKit'
+import { MachineViewer } from '../../components/mode/signature'
 import { Card, Meter, Pill } from '../../components/ui'
 import { cn } from '../../utils/cn'
 import { INDUSTRIAL_MODE } from './config'
 import { EQUIPMENT_UNIT, FIELD_NOTICE, INSPECTION_STEPS, MANUAL_STEPS, READINGS } from './demoData'
-
-function EquipmentDiagram() {
-  return (
-    <svg viewBox="0 0 360 170" className="h-44 w-full rounded-lg border border-line/70 bg-bg/50" role="img" aria-label="Fictional equipment diagram">
-      <g fill="none" stroke="#3a4f72" strokeWidth="2">
-        <rect x="22" y="102" width="90" height="46" rx="6" fill="#0f1a2c" />
-        <circle cx="67" cy="125" r="16" fill="#162338" stroke="#f5b942" />
-        <path d="M67 125l10-9" stroke="#f5b942" strokeWidth="3" strokeLinecap="round" />
-        <path d="M112 116h36v-24h58" stroke="#8796aa" />
-        <rect x="206" y="70" width="66" height="66" rx="6" fill="#0f1a2c" />
-        <path d="M222 118c8-22 26-22 34 0" stroke="#42d6c5" />
-        <path d="M272 103h46v34h-46z" fill="#0f1a2c" />
-        <path d="M278 103v-14h34" stroke="#4da3ff" />
-        <circle cx="296" cy="120" r="8" fill="#162338" stroke="#4da3ff" />
-        <path d="M148 92v34M148 126h58" stroke="#8796aa" strokeDasharray="5 4" />
-      </g>
-      <g fill="#8796aa" fontSize="9" fontFamily="ui-monospace,monospace">
-        <text x="24" y="97">MOTOR / DEMO</text>
-        <text x="208" y="66">SEAL SENSOR</text>
-        <text x="274" y="150">OUTLET</text>
-        <text x="22" y="162">FICTIONAL DIAGRAM · NOT FOR MAINTENANCE USE</text>
-      </g>
-      <g>
-        <circle cx="196" cy="82" r="4" fill="#f5b942" />
-        <circle cx="196" cy="82" r="9" fill="none" stroke="#f5b942" strokeOpacity="0.4" />
-      </g>
-    </svg>
-  )
-}
 
 export function IndustrialDashboard() {
   const state = useModeState()
@@ -81,7 +53,7 @@ export function IndustrialDashboard() {
 
           <ModePanel title="Maintenance manual" icon={<BookOpen className="size-4" />} right={<Pill tone="neutral">{state.stepIndex + 1}/{MANUAL_STEPS.length}</Pill>}>
             <div className="mb-3">
-              <EquipmentDiagram />
+              <MachineViewer compact />
             </div>
             <ol className="space-y-1.5">
               {MANUAL_STEPS.map((s, i) => (

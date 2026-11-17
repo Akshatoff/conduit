@@ -150,6 +150,16 @@ export interface HandFeatures {
   gesture: Gesture
 }
 
+export interface SecondHand {
+  hand_detected: true
+  handedness: string | null
+  position: { x: number; y: number }
+  gesture: string
+  pinch_distance: number
+  orientation_deg: number
+  features: Partial<HandFeatures> | null
+}
+
 export interface VisionFrame {
   timestamp: number
   hand_detected: boolean
@@ -162,6 +172,8 @@ export interface VisionFrame {
   fps: number
   tracking_quality: number
   features: Partial<HandFeatures> | null
+  /** Optional second hand. Used only by mode signature interactions, never by the Intent Engine. */
+  second_hand?: SecondHand | null
 }
 
 export type CommandStatus = 'PENDING' | 'REJECTED' | 'SENT' | 'ACKNOWLEDGED' | 'CONFIRMED' | 'FAILED' | 'DISCONNECTED'

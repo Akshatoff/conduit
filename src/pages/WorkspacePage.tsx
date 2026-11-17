@@ -11,12 +11,15 @@ import {
   MousePointer2,
   RotateCcw,
   ShieldAlert,
+  ScanLine,
   SlidersHorizontal,
   Square,
+  X,
 } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { CameraStage } from '../components/CameraStage'
 import { ControlTiles, DemoGuide, InteractionHistory, SafetyNote, useActiveMode, useModeState } from '../components/mode/DashboardKit'
+import { SignatureScreen } from '../components/mode/signature'
 import { Btn, Card, Empty, Pill } from '../components/ui'
 import { AccessibilityDashboard } from '../modes/accessibility/Dashboard'
 import { resetModeDemo } from '../modes/actions'
@@ -173,6 +176,7 @@ export function WorkspacePage() {
   const mode = useActiveMode()
   const state = useModeState()
   const [detail, setDetail] = useState<DetailTab | null>(null)
+  const [screen, setScreen] = useState(false)
   const detailsRef = useRef<HTMLDivElement>(null)
 
   const openDetail = (tab: DetailTab) => {
@@ -212,14 +216,42 @@ export function WorkspacePage() {
           <section className="overflow-hidden rounded-xl border border-line bg-surface/90">
             <div className="flex flex-wrap items-center gap-2 border-b border-line/70 px-3 py-2">
               <VisionControls />
+              <Btn size="sm" variant={screen ? 'primary' : 'default'} onClick={() => setScreen((v) => !v)} aria-pressed={screen}>
+                <ScanLine className="size-3.5" /> <span className="hidden sm:inline">Signature screen</span>
+              </Btn>
               <span className="ml-auto hidden items-center gap-1.5 text-[10px] text-muted lg:flex">
                 <Hand className="size-3.5" /> palm to activate · hold to select · pinch to confirm
               </span>
             </div>
-            <CameraStage
-              fill
-              className="h-[62dvh] min-h-[360px] rounded-none border-0 sm:h-[68dvh] xl:h-[calc(100dvh-13rem)] xl:min-h-[500px]"
-            />
+            <div className="relative">
+              <CameraStage
+                fill
+                className="h-[62dvh] min-h-[360px] rounded-none border-0 sm:h-[68dvh] xl:h-[calc(100dvh-13rem)] xl:min-h-[500px]"
+              />
+              {screen && (
+                <div className="pointer-events-none absolute inset-0 z-20 flex flex-col bg-bg/90 p-3 backdrop-blur-sm">
+                  <div className="flex items-center gap-2 border-b border-line/60 pb-2">
+                    <ScanLine className="size-4 text-accent" />
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink">Signature screen</p>
+                    <Pill tone="teal">{mode.shortName}</Pill>
+                    <span className="hidden text-[10px] text-muted sm:inline">gesture view · camera still tracked underneath</span>
+                    <button
+                      onClick={() => setScreen(false)}
+                      aria-label="Close signature screen"
+                      className="pointer-events-auto ml-auto rounded-md border border-line p-1 text-muted hover:text-ink"
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  </div>
+                  <div className="min-h-0 w-full flex-1 pt-2 [&_button]:pointer-events-auto [&_select]:pointer-events-auto">
+                    <SignatureScreen modeId={mode.id} />
+                  </div>
+                  <p className="w-full border-t border-line/60 pt-2 text-[9px] leading-snug text-muted">
+                    View navigation only. Commands still pass through the Intent Engine; this overlay never bypasses confirmation.
+                  </p>
+                </div>
+              )}
+            </div>
           </section>
         </div>
 

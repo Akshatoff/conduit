@@ -32,3 +32,11 @@ export const INSPECTION_STEPS = [
   'Record a simulated observation',
   'Request assistance if needed',
 ]
+
+
+/** Interactive diagram hotspots for the industrial signature screen (fictional components). */
+export const MACHINE_COMPONENTS = [
+  { id: 'motor', label: 'Drive motor', x: 0.27, y: 0.65, description: 'Fictional demo motor. In a real service bay isolation and lock-off would be verified before inspection.' },
+  { id: 'seal', label: 'Seal sensor', x: 0.74, y: 0.46, description: 'Fictional seal-wear sensor. Readings shown in this prototype are placeholder values, not measurements.' },
+  { id: 'outlet', label: 'Outlet assembly', x: 0.89, y: 0.57, description: 'Fictional outlet assembly. No valve, pump or process line is connected to this demonstration.' },
+] as const

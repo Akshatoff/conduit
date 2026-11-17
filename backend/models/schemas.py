@@ -40,6 +40,8 @@ class VisionFrame(BaseModel):
     fps: float = 0.0
     tracking_quality: float = 0.0
     features: Optional[Dict[str, Any]] = None
+    # Optional second hand for view-only mode signatures; never consumed by the Intent Engine.
+    second_hand: Optional[Dict[str, Any]] = None
 
 
 # ------------------------------------------------------------------ requests

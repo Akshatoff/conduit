@@ -46,6 +46,7 @@ class HandFeatures:
     def to_dict(self) -> dict:
         return {
             "handedness": self.handedness,
+            "landmarks": self.landmarks,
             "wrist": self.wrist,
             "palm_center": self.palm_center,
             "fingertips": self.fingertips,

@@ -10,7 +10,7 @@ import { DeviceController } from '../core/devices'
 import { IntentEngine } from '../core/intentEngine'
 import { PositionSmoother, extractFeatures, makeHand } from '../core/landmarks'
 import { TrajectoryAnalyzer } from '../core/trajectory'
-import type { AppSettings, CommandRequest, CommandResult, IntentEvent, IntentSnapshot, InteractionInput, VisionFrame, Zone } from '../core/types'
+import type { AppSettings, CommandRequest, CommandResult, IntentEvent, IntentSnapshot, InteractionInput, SecondHand, VisionFrame, Zone } from '../core/types'
 import { idleSnapshot, pushLog, useConduit } from '../store'
 import { applyDigitalCommand, recordPhysicalOutcome } from '../modes/actions'
 import { digitalControl, getMode } from '../modes/registry'
@@ -49,9 +49,11 @@ export class LocalRuntime implements Runtime {
   private baseline: BaselineController
   private analytics = new LocalAnalytics()
   private smoother = new PositionSmoother(0.5)
+  private secondSmoother = new PositionSmoother(0.5)
   private view = new TrajectoryAnalyzer()
   private trail: number[][] = []
   private lastGesture = 'none'
+  private lastPrimary: { x: number; y: number } | null = null
   private missed = 0
 
   private video: HTMLVideoElement
@@ -181,7 +183,7 @@ export class LocalRuntime implements Runtime {
     const { FilesetResolver, HandLandmarker } = await import('@mediapipe/tasks-vision')
     const fileset = await FilesetResolver.forVisionTasks(WASM_BASE)
     const mk = (delegate: 'GPU' | 'CPU') =>
-      HandLandmarker.createFromOptions(fileset, { baseOptions: { modelAssetPath: MODEL_URL, delegate }, runningMode: 'VIDEO', numHands: 1, minHandDetectionConfidence: 0.6, minHandPresenceConfidence: 0.5, minTrackingConfidence: 0.5 })
+      HandLandmarker.createFromOptions(fileset, { baseOptions: { modelAssetPath: MODEL_URL, delegate }, runningMode: 'VIDEO', numHands: 2, minHandDetectionConfidence: 0.6, minHandPresenceConfidence: 0.5, minTrackingConfidence: 0.5 })
     try {
       return (await mk('GPU')) as unknown as Landmarker
     } catch {
@@ -230,11 +232,25 @@ export class LocalRuntime implements Runtime {
       const t = performance.now()
       try {
         const res = this.landmarker.detectForVideo(v, t)
-        const lm = res.landmarks?.[0] as { x: number; y: number; z: number }[] | undefined
-        const cat = res.handedness?.[0]?.[0]
+        const hands = res.landmarks as { x: number; y: number; z: number }[][] | undefined
+        // Keep the same physical hand as primary while two hands are visible. The Intent Engine
+        // must not see a left/right identity swap just because detection order changed.
+        let pi = 0
+        if (hands && hands.length > 1 && this.lastPrimary) {
+          const dist = (h: { x: number; y: number }[]) => {
+            const p = h[9]
+            return (1 - p.x - this.lastPrimary!.x) ** 2 + (p.y - this.lastPrimary!.y) ** 2
+          }
+          pi = dist(hands[0]) <= dist(hands[1]) ? 0 : 1
+        }
+        const lm = hands?.[pi]
+        const lm2 = hands?.length === 2 ? hands[pi === 0 ? 1 : 0] : undefined
+        const cat = res.handedness?.[pi]?.[0]
+        const cat2 = res.handedness?.[hands?.length === 2 ? (pi === 0 ? 1 : 0) : 1]?.[0]
         // mirror x so everything is in selfie (mirrored) space, matching the displayed video
         const pts = lm ? lm.map((p) => [1 - p.x, p.y, p.z]) : null
-        this.processDetection(pts, cat?.categoryName ?? 'Unknown', cat?.score ?? 1, t / 1000)
+        const pts2 = lm2 ? lm2.map((p) => [1 - p.x, p.y, p.z]) : null
+        this.processDetection(pts, cat?.categoryName ?? 'Unknown', cat?.score ?? 1, t / 1000, pts2, cat2?.categoryName ?? 'Unknown', cat2?.score ?? 1)
       } catch (e) {
         pushLog({ channel: 'system', level: 'error', title: 'Tracking error', detail: String(e) })
       }
@@ -242,23 +258,37 @@ export class LocalRuntime implements Runtime {
     this.raf = requestAnimationFrame(this.cameraLoop)
   }
 
-  private processDetection(points: number[][] | null, handedness: string, score: number, t: number) {
+  private processDetection(points: number[][] | null, handedness: string, score: number, t: number, secondPoints: number[][] | null = null, secondHandedness = 'Unknown', secondScore = 1) {
     const dt = this.lastFrameAt ? t - this.lastFrameAt : 0.033
     this.lastFrameAt = t
     this.fps += 0.1 * (1 / Math.max(dt, 1e-3) - this.fps)
     let frame: VisionFrame
     if (!points) {
       this.smoother.reset()
+      this.secondSmoother.reset()
+      this.lastPrimary = null
       this.view.reset()
       this.missed = Math.min(1, this.missed + 0.2)
-      frame = { timestamp: t, hand_detected: false, handedness: null, position: null, gesture: 'none', pinch_distance: null, velocity: 0, stability: 0, fps: this.fps, tracking_quality: 0, features: null }
+      frame = { timestamp: t, hand_detected: false, handedness: null, position: null, gesture: 'none', pinch_distance: null, velocity: 0, stability: 0, fps: this.fps, tracking_quality: 0, features: null, second_hand: null }
     } else {
       this.missed = Math.max(0, this.missed - 0.1)
       const f = extractFeatures(points, handedness, score, 1 - this.missed)
+      this.lastPrimary = { x: f.palm_center[0], y: f.palm_center[1] }
       const [sx, sy] = this.smoother.update(f.palm_center[0], f.palm_center[1])
       this.view.add(t, sx, sy)
       const m = this.view.metrics()
-      frame = { timestamp: t, hand_detected: true, handedness, position: { x: sx, y: sy }, gesture: f.gesture, pinch_distance: f.pinch_distance, velocity: m.speed, stability: m.stability, fps: this.fps, tracking_quality: f.tracking_confidence, features: f }
+      let second: SecondHand | null = null
+      if (secondPoints) {
+        const f2 = extractFeatures(secondPoints, secondHandedness, secondScore, 1 - this.missed)
+        const [s2x, s2y] = this.secondSmoother.update(f2.palm_center[0], f2.palm_center[1])
+        second = {
+          hand_detected: true, handedness: secondHandedness, position: { x: s2x, y: s2y }, gesture: f2.gesture,
+          pinch_distance: f2.pinch_distance, orientation_deg: f2.orientation_deg, features: f2,
+        }
+      } else {
+        this.secondSmoother.reset()
+      }
+      frame = { timestamp: t, hand_detected: true, handedness, position: { x: sx, y: sy }, gesture: f.gesture, pinch_distance: f.pinch_distance, velocity: m.speed, stability: m.stability, fps: this.fps, tracking_quality: f.tracking_confidence, features: f, second_hand: second }
     }
     this.ingest(frame)
   }

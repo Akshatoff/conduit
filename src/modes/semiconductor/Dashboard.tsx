@@ -1,47 +1,11 @@
 import { CheckSquare, ClipboardCheck, Factory, Fan, Layers, ScanSearch, ServerCog, ShieldCheck } from 'lucide-react'
 import { ModePanel, WorkflowRail, useModeState } from '../../components/mode/DashboardKit'
+import { WaferInspector } from '../../components/mode/signature'
 import { Card, Meter, Pill } from '../../components/ui'
 import { useConduit } from '../../store'
 import { cn } from '../../utils/cn'
 import { SEMICONDUCTOR_MODE } from './config'
-import { CHECKLIST, DEFECT_CATEGORIES, EQUIPMENT, FAB_NOTICE, PROCESS_STAGES, WAFER_DIES } from './demoData'
-
-function WaferMap({ zoom }: { zoom: number }) {
-  const scale = [1, 1.45, 1.95][zoom] ?? 1
-  const cols = 7
-  return (
-    <div className="relative overflow-hidden rounded-lg border border-line/70 bg-[#061214]">
-      <svg viewBox="0 0 340 250" className="h-72 w-full" role="img" aria-label="Fictional wafer map — simulated data">
-        <defs>
-          <clipPath id="wafer"><circle cx="170" cy="125" r="104" /></clipPath>
-        </defs>
-        <g transform={`translate(170 125) scale(${scale}) translate(-170 -125)`}>
-          <circle cx="170" cy="125" r="108" fill="none" stroke="#42d6c5" strokeWidth="2" opacity="0.7" />
-          <circle cx="170" cy="125" r="104" fill="#0a1e20" />
-          <g clipPath="url(#wafer)">
-            {WAFER_DIES.map((d, i) => {
-              const col = i % cols
-              const row = Math.floor(i / cols)
-              const x = 84 + col * 25
-              const y = 47 + row * 26
-              const fill = d.state === 'flagged' ? '#f5b942' : d.state === 'review' ? '#4da3ff' : '#1b4b4a'
-              return <rect key={d.id} x={x} y={y} width="21" height="21" rx="2" fill={fill} opacity={d.state === 'ok' ? 0.75 : 0.95} stroke="#0a1e20" strokeWidth="1.5" />
-            })}
-          </g>
-          <path d="M170 21v-9" stroke="#42d6c5" strokeWidth="3" strokeLinecap="round" />
-        </g>
-        <g fontSize="9" fill="#7f9a9a" fontFamily="ui-monospace,monospace">
-          <text x="12" y="238">SIMULATED WAFER · fictional die map · zoom {zoom + 1}×</text>
-          <text x="248" y="238">LOT DEMO-0042</text>
-        </g>
-      </svg>
-      <div className="pointer-events-none absolute left-3 top-3 flex gap-1.5">
-        <Pill tone="warn">SIMULATED</Pill>
-        <Pill tone="neutral">not metrology</Pill>
-      </div>
-    </div>
-  )
-}
+import { CHECKLIST, DEFECT_CATEGORIES, EQUIPMENT, FAB_NOTICE, PROCESS_STAGES } from './demoData'
 
 function EquipmentCard({ equipment }: { equipment: (typeof EQUIPMENT)[number] }) {
   const devices = useConduit((s) => s.devices)
@@ -133,7 +97,7 @@ export function SemiconductorDashboard() {
           >
             {state.panel === 'inspection' ? (
               <>
-                <WaferMap zoom={state.zoom} />
+                <WaferInspector compact />
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   {DEFECT_CATEGORIES.map((d, i) => (
                     <span

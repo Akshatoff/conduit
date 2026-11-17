@@ -59,7 +59,7 @@ class HandTracker:
             opts = mp_vision.HandLandmarkerOptions(
                 base_options=mp_python.BaseOptions(model_asset_path=str(ensure_model())),
                 running_mode=mp_vision.RunningMode.VIDEO,
-                num_hands=1,
+                num_hands=2,
                 min_hand_detection_confidence=min_detection,
                 min_hand_presence_confidence=min_tracking,
                 min_tracking_confidence=min_tracking,
@@ -69,12 +69,17 @@ class HandTracker:
         except Exception as tasks_err:
             if not hasattr(mp, "solutions"):
                 raise TrackerUnavailable(f"MediaPipe Tasks failed: {tasks_err}") from tasks_err
-            self._hands = mp.solutions.hands.Hands(max_num_hands=1, model_complexity=1,
+            self._hands = mp.solutions.hands.Hands(max_num_hands=2, model_complexity=1,
                                                    min_detection_confidence=min_detection,
                                                    min_tracking_confidence=min_tracking)
             self.backend = "mediapipe-solutions"
 
-    def process(self, bgr_frame, timestamp_s: float) -> Optional[Detection]:
+    def process(self, bgr_frame, timestamp_s: float) -> List[Detection]:
+        """Return up to two detected hands.
+
+        The caller decides which detection is primary and keeps that choice stable across frames;
+        the second hand is optional and used only by mode-layer signature interactions.
+        """
         import cv2
 
         rgb = cv2.cvtColor(bgr_frame, cv2.COLOR_BGR2RGB)
@@ -83,18 +88,23 @@ class HandTracker:
             img = self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=rgb)
             res = self._landmarker.detect_for_video(img, self._ts_ms)
             if not res.hand_landmarks:
-                return None
-            lm = res.hand_landmarks[0]
-            cat = res.handedness[0][0] if res.handedness else None
-            return Detection([[p.x, p.y, p.z] for p in lm], cat.category_name if cat else "Unknown",
-                             float(cat.score) if cat else 1.0)
+                return []
+            out: List[Detection] = []
+            for i, lm in enumerate(res.hand_landmarks[:2]):
+                cat = res.handedness[i][0] if res.handedness and i < len(res.handedness) else None
+                out.append(Detection([[p.x, p.y, p.z] for p in lm], cat.category_name if cat else "Unknown",
+                                      float(cat.score) if cat else 1.0))
+            return out
         rgb.flags.writeable = False
         res = self._hands.process(rgb)
         if not res.multi_hand_landmarks:
-            return None
-        lm = res.multi_hand_landmarks[0].landmark
-        h = res.multi_handedness[0].classification[0] if res.multi_handedness else None
-        return Detection([[p.x, p.y, p.z] for p in lm], h.label if h else "Unknown", float(h.score) if h else 1.0)
+            return []
+        out = []
+        for i, hand in enumerate(res.multi_hand_landmarks[:2]):
+            h = res.multi_handedness[i].classification[0] if res.multi_handedness and i < len(res.multi_handedness) else None
+            out.append(Detection([[p.x, p.y, p.z] for p in hand.landmark], h.label if h else "Unknown",
+                                 float(h.score) if h else 1.0))
+        return out
 
     def close(self) -> None:
         try:
