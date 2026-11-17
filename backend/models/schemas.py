@@ -12,6 +12,7 @@ EVENT_TYPES = [
     "snapshot", "camera_status", "hand_landmarks", "trajectory_update", "gesture_detected", "intent_state_changed",
     "device_selected", "confirmation_required", "command_sent", "command_acknowledged", "command_rejected",
     "device_state_changed", "analytics_updated", "settings_changed", "system_error",
+    "mode_action", "workspace_changed",
 ]
 
 
@@ -54,6 +55,7 @@ class DeviceTestRequest(BaseModel):
 class SessionStartRequest(BaseModel):
     mode: Literal["baseline", "conduit"]
     note: str = ""
+    workspace: Optional[str] = Field(None, max_length=40)
 
 
 class TrialStartRequest(BaseModel):
@@ -99,6 +101,7 @@ class PrivacySettings(BaseModel):
 
 
 class AppSettings(BaseModel):
+    workspace_mode: str = Field("hospital", max_length=40)   # active operational environment
     hardware_mode: Literal["simulation", "hardware"] = "simulation"
     interaction_mode: Literal["baseline", "conduit"] = "conduit"
     esp32: Esp32Settings = Field(default_factory=Esp32Settings)

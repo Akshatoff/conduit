@@ -73,3 +73,19 @@ curl -X POST http://<ESP32-IP>/command -d "{\"command_id\":\"t1\",\"device\":\"l
 | ESP32 resets when servo moves | servo powered from the ESP32 — use an external 5 V supply |
 | Servo jitters | brown-out; add a 470 µF capacitor across the servo supply |
 | Browser runtime can't reach ESP32 | page is served over **https** (mixed content). Use the Python backend or open over http |
+
+## Outputs per operational environment
+
+The same three low-voltage outputs are reused, with mode-specific meaning. Nothing new is required.
+
+| Environment | `lighting` (LED) | `ventilation` (fan) | `access` (SG90 latch) |
+|---|---|---|---|
+| Hospital | workstation lamp | — | — |
+| Semiconductor | equipment status indicator | ventilation indicator | model access mechanism |
+| Industrial | equipment indicator | — | service access latch |
+| Food processing | pass lamp | — | — |
+| Accessibility | desk lamp | — | — |
+
+A mode may leave an output unused. All outputs still go through `validate → SENT → ACK → state
+read-back → CONFIRMED`; the twin never infers success from a digital mode action. Digital controls
+(such as opening a patient panel) are handled by the mode layer and never reach this node.

@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test:parity": "esbuild tests_ts/parity.ts --bundle --platform=node --outfile=.parity.cjs --log-level=error && node .parity.cjs",
+    "test:modes": "esbuild tests_ts/modes.ts --bundle --platform=node --outfile=.modes.cjs --log-level=error && node .modes.cjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.2.3",

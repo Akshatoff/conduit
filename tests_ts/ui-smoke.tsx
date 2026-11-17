@@ -5,6 +5,9 @@ import { createRoot } from 'react-dom/client'
 import App from '../src/App'
 import { rt } from '../src/runtime'
 import { useConduit } from '../src/store'
+import { enterModeLocal } from '../src/modes/actions'
+import { getMode } from '../src/modes/registry'
+import type { ModeId } from '../src/modes/types'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -38,7 +41,8 @@ async function main() {
   await act(async () => sleep(800))
   check('browser runtime selected when backend absent', S().runtimeKind === 'browser')
   const text = () => document.body.textContent ?? ''
-  check('Live Interaction renders', /Intent Engine/.test(text()) && /CONDUIT/.test(text()))
+  check('environment selection renders first', S().page === 'modes' && /Choose your environment/.test(text()) && /Hospital/.test(text()) && /Semiconductor/.test(text()))
+  check('all five environments are offered', (text().match(/Enter mode/g) ?? []).length === 5)
 
   for (const [page, needle] of [['twin', 'Confirmed state'], ['analytics', 'No test results yet'], ['settings', 'Intent thresholds'], ['live', 'What the system believes']] as const) {
     await act(async () => { useConduit.setState({ page }); await sleep(150) })
@@ -64,19 +68,24 @@ async function main() {
 
   // ---- accidental swipe through zones must not execute anything
   await rt().setPointerPinch(false)
-  await hold(0.5, 0.85, 3.2) // leave zone, wait out cooldown / result hold
+  // neutral (non-activation) pose outside the zones: wait out the result hold without deactivating
+  useConduit.setState({ pointer: { ...S().pointer, gesture: 'point' } })
+  await hold(0.5, 0.85, 2.6)
   const before = S().devices.lighting.confirmed_state + S().devices.access.confirmed_state
   await move([0.02, 0.3], [0.98, 0.3], 0.5)
   await hold(0.98, 0.3, 0.3)
+  useConduit.setState({ pointer: { ...S().pointer, gesture: 'open_palm' } })
   check('swipe across zones executes nothing', S().devices.lighting.confirmed_state + S().devices.access.confirmed_state === before)
   check('rejection logged with reason', S().log.some((l) => l.code === 'TRANSIT'))
 
   // ---- analytics session
   await act(async () => { await rt().startSession('conduit', 'smoke') })
   await act(async () => { await rt().startTrial('unintended', null, 'swipe') })
+  useConduit.setState({ pointer: { ...S().pointer, gesture: 'point' } })
   await hold(0.5, 0.85, 1.0)
   await move([0.02, 0.3], [0.98, 0.3], 0.5)
   await hold(0.98, 0.3, 0.3)
+  useConduit.setState({ pointer: { ...S().pointer, gesture: 'open_palm' } })
   await act(async () => { await rt().endTrial() })
   await act(async () => { await rt().stopSession() })
   const m = S().analytics!.by_mode.conduit
@@ -84,6 +93,45 @@ async function main() {
   check('intent latency measured', (m.avg_intent_latency_ms ?? -1) >= 0)
   const csv = await rt().exportCsv()
   check('CSV export has header + 1 trial', csv.trim().split('\n').length === 2 && csv.startsWith('session_id,mode'))
+
+  // ---- multi-mode: enter hospital via the environment screen, then drive a digital control
+  await act(async () => { useConduit.setState({ page: 'modes' }); await sleep(150) })
+  const enterBtn = Array.from(document.querySelectorAll('button')).find((b) => /Enter mode/.test(b.textContent ?? ''))
+  check('environment card has an Enter mode action', !!enterBtn)
+  await act(async () => { enterBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true })); await sleep(250) })
+  check('entering hospital loads its dashboard + zones', S().activeMode === 'hospital' && S().zones.length === 8 && /FICTIONAL DEMONSTRATION DATA/.test(text()), `${S().activeMode} zones=${S().zones.length}`)
+  check('camera pipeline was not reset by entering a mode', S().camera.state === 'running')
+  const timerZone = S().zones.find((z) => z.id === 'hospital.timer')!
+  const timerX = (timerZone.x0 + timerZone.x1) / 2
+  const timerY = (timerZone.y0 + timerZone.y1) / 2
+  await rt().setPointerPinch(false)
+  await hold(0.5, 0.82, 1.2)
+  await move([0.5, 0.82], [0.5, timerY], 0.6)
+  await move([0.5, timerY], [timerX, timerY], 0.5)
+  await hold(timerX, timerY, 1.3)
+  check('hospital digital control reaches AWAITING_CONFIRMATION', S().intent.state === 'AWAITING_CONFIRMATION', `${S().intent.state}: ${S().intent.reason}`)
+  await hold(timerX, timerY, 0.6, true)
+  await sleep(500)
+  check('digital action confirmed in the mode layer (timer runs)', S().modeState.hospital.timer.running && S().modeState.hospital.history.some((h) => h.source === 'intent' && h.status === 'confirmed'), JSON.stringify(S().modeState.hospital.history.slice(0, 1)))
+  check('digital action never changes the physical twin', S().devices.lighting.last_command === null || S().devices.lighting.last_command?.source !== 'conduit_intent_engine' || S().devices.lighting.confirmed_state === 'OFF')
+  await act(async () => { useConduit.setState({ page: 'workspace' }); await sleep(200) })
+  check('workspace renders the hospital dashboard', /Patient information/.test(text()) && /Task checklist/.test(text()))
+
+  // ---- every environment dashboard renders from its own config
+  for (const [id, needle] of [
+    ['semiconductor', 'Simulated cleanroom workstation'],
+    ['industrial', 'Demo circulation pump'],
+    ['food_processing', 'Ingredient quantities'],
+    ['accessibility', 'Adaptive interaction surface'],
+  ] as [ModeId, string][]) {
+    await act(async () => {
+      enterModeLocal(id)
+      await rt().setWorkspaceMode(id, getMode(id)!.zones)
+      await sleep(200)
+    })
+    check(`${id} workspace renders its dashboard`, text().includes(needle) && S().activeMode === id && S().zones.length === getMode(id)!.zones.length, text().slice(0, 160))
+  }
+  check('mode switching kept one camera pipeline alive', S().camera.state === 'running')
 
   // ---- baseline comparison + simulated link failure
   await act(async () => { await rt().simulateFault(true) })

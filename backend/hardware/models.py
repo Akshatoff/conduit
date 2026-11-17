@@ -80,3 +80,4 @@ class CommandResult(BaseModel):
     ack_latency_ms: Optional[float] = None   # command sent -> ack received
     acknowledged: bool = False
     executed_on: str = "simulation"
+    digital: bool = False                    # digital mode-layer action (never physical hardware)

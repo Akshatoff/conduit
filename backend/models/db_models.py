@@ -54,6 +54,7 @@ class TestSessionRow(Base):
     __test__ = False  # not a pytest class
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     mode: Mapped[str] = mapped_column(String(20))
+    workspace: Mapped[str] = mapped_column(String(40), default="hospital")
     note: Mapped[str] = mapped_column(Text, default="")
     start_time: Mapped[float] = mapped_column(Float)
     end_time: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
@@ -69,6 +70,7 @@ class TrialRow(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     session_id: Mapped[int] = mapped_column(ForeignKey("test_sessions.id"), index=True)
     label: Mapped[str] = mapped_column(String(12))          # intended | unintended
+    workspace: Mapped[str] = mapped_column(String(40), default="hospital")
     target: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
     scenario: Mapped[str] = mapped_column(String(80), default="")
     started_at: Mapped[float] = mapped_column(Float)

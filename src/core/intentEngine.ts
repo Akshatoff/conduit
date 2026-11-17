@@ -491,7 +491,7 @@ export class IntentEngine {
     this.lastActivity = t
     this.state = 'SELECTING'
     this.stateT0 = t
-    this.action = toggleAction(zone.device, this.deviceStates()[zone.device])
+    this.action = toggleAction(zone.device, this.deviceStates()[zone.device], zone.action)
     ;[this.confidence, this.components] = this.score(false)
     this.selectionConfidence = this.confidence
     this.emit('state_changed', false, `Hand entered ${zone.label} zone — evaluating dwell and stability`, 'SELECTING')
@@ -512,7 +512,7 @@ export class IntentEngine {
     this.stabEma += 0.25 * (this.metrics.stability - this.stabEma)
     ;[this.selectionConfidence, this.components] = this.score(false)
     this.confidence = this.selectionConfidence
-    this.action = toggleAction(zone.device, this.deviceStates()[zone.device])
+    this.action = toggleAction(zone.device, this.deviceStates()[zone.device], zone.action)
 
     if (this.dwell >= cfg.min_dwell_s) {
       if (this.metrics.stability < cfg.stability_threshold) {
@@ -546,7 +546,7 @@ export class IntentEngine {
     this.lastActivity = t
     if (this.hovered === this.target) this.dwell = this.traj.dwell(zone.id, t)
     this.stabEma += 0.1 * (this.metrics.stability - this.stabEma)
-    this.action = toggleAction(zone.device, this.deviceStates()[zone.device])
+    this.action = toggleAction(zone.device, this.deviceStates()[zone.device], zone.action)
 
     if (this.hovered !== this.target) {
       if (this.leftSince === null) this.leftSince = t

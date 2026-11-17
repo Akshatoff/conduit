@@ -5,13 +5,16 @@
 
 import { LocalAnalytics } from '../core/analytics'
 import { BaselineController } from '../core/baseline'
-import { defaultSettings } from '../core/config'
+import { DEVICE_SPECS, defaultSettings } from '../core/config'
 import { DeviceController } from '../core/devices'
 import { IntentEngine } from '../core/intentEngine'
 import { PositionSmoother, extractFeatures, makeHand } from '../core/landmarks'
 import { TrajectoryAnalyzer } from '../core/trajectory'
-import type { AppSettings, CommandRequest, IntentEvent, IntentSnapshot, InteractionInput, VisionFrame } from '../core/types'
+import type { AppSettings, CommandRequest, CommandResult, IntentEvent, IntentSnapshot, InteractionInput, VisionFrame, Zone } from '../core/types'
 import { idleSnapshot, pushLog, useConduit } from '../store'
+import { applyDigitalCommand, recordPhysicalOutcome } from '../modes/actions'
+import { digitalControl, getMode } from '../modes/registry'
+import type { ModeId } from '../modes/types'
 import { logCommandEvent, logIntentEvent } from './logging'
 import type { Runtime } from './types'
 
@@ -81,6 +84,9 @@ export class LocalRuntime implements Runtime {
 
   async init() {
     set({
+      // The operator must explicitly enter an environment: persisted zone geometry alone does not
+      // mean a mode dashboard is loaded (the app opens on the environment-selection screen).
+      activeMode: null,
       settings: this.settings, zones: this.settings.intent.zones, interactionMode: this.settings.interaction_mode, hardwareMode: this.settings.hardware_mode,
       hardwareInfo: this.settings.esp32, devices: { ...this.controller.twin }, analytics: this.analytics.summary(), link: 'open',
     })
@@ -322,7 +328,45 @@ export class LocalRuntime implements Runtime {
   }
 
   private async dispatch(req: CommandRequest) {
+    // Digital controls belong to the active mode's UI. They are authorised by the same Intent
+    // Engine, but they never touch the device controller and are labelled as digital.
+    if (!DEVICE_SPECS[req.device]) {
+      await this.dispatchDigital(req)
+      return
+    }
     const res = await this.controller.execute({ command_id: req.command_id, device: req.device, action: req.action, source: req.source, confidence: req.confidence })
+    this.analytics.recordCommand(res)
+    if (req.source === 'conduit_intent_engine') recordPhysicalOutcome(req.device, req.action, res.status === 'CONFIRMED', res.detail)
+    this.pushAnalytics()
+    if (req.source === 'conduit_intent_engine' && get().interactionMode === 'conduit') {
+      for (const ev of this.engine.notifyCommandResult(res.status === 'CONFIRMED', res.detail, now())) this.handleEvent(ev)
+    }
+  }
+
+  private async dispatchDigital(req: CommandRequest) {
+    const t0 = performance.now()
+    const def = getMode(get().activeMode)
+    const control = def ? digitalControl(def, req.device) : undefined
+    const valid = !!control && (!control.action || control.action === req.action)
+    await new Promise((r) => setTimeout(r, 40))
+    const latency = performance.now() - t0
+    const res: CommandResult = {
+      command_id: req.command_id, device: req.device, action: req.action, source: req.source,
+      status: valid ? 'CONFIRMED' : 'REJECTED',
+      detail: valid
+        ? `Digital control '${control!.label}' executed in the mode layer (no physical device)`
+        : `Action '${req.action}' is not part of the active mode`,
+      confirmed_state: valid ? req.action : null, simulated: true, latency_ms: latency, ack_latency_ms: latency,
+      acknowledged: valid, executed_on: 'mode_ui', digital: true,
+    }
+    logCommandEvent('command_sent', { ...res, status: 'SENT', sandbox: true } as unknown as Record<string, unknown>)
+    if (valid) {
+      logCommandEvent('command_acknowledged', { ...res, actual_state: req.action, ack_latency_ms: latency, sandbox: true } as unknown as Record<string, unknown>)
+      applyDigitalCommand(req.device, req.action, 'confirmed')
+    } else {
+      logCommandEvent('command_rejected', res as unknown as Record<string, unknown>)
+      applyDigitalCommand(req.device, req.action, 'rejected')
+    }
     this.analytics.recordCommand(res)
     this.pushAnalytics()
     if (req.source === 'conduit_intent_engine' && get().interactionMode === 'conduit') {
@@ -359,6 +403,16 @@ export class LocalRuntime implements Runtime {
     this.settings = { ...this.settings, interaction_mode: m }
     this.persist()
     set({ interactionMode: m, settings: this.settings, intent: m === 'baseline' ? { ...idleSnapshot(), state: 'BASELINE', active: true, reason: 'Baseline mode: gestures map directly to commands (no intent evaluation)' } : idleSnapshot() })
+  }
+
+  async setWorkspaceMode(mode: string, zones: Zone[]) {
+    const next = { ...this.settings, workspace_mode: mode, intent: { ...this.settings.intent, zones } }
+    this.settings = next
+    this.persist()
+    this.engine.setConfig(next.intent)
+    this.engine.reset()
+    this.baseline.reset()
+    set({ settings: next, zones, activeMode: (getMode(mode)?.id ?? null) as ModeId | null })
   }
 
   async testDevice(id: string, action: string) {
@@ -424,7 +478,9 @@ export class LocalRuntime implements Runtime {
   }
   async startSession(mode: 'baseline' | 'conduit', note: string) {
     if (get().interactionMode !== mode) await this.setInteractionMode(mode)
-    this.guard(() => this.analytics.startSession(mode, note))
+    // Prefer the entered environment; otherwise the last environment whose zones are loaded.
+    const workspace = get().activeMode ?? getMode(get().settings.workspace_mode)?.id ?? 'hospital'
+    this.guard(() => this.analytics.startSession(mode, note, workspace))
   }
   async stopSession() {
     this.guard(() => this.analytics.stopSession())

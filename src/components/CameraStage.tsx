@@ -17,6 +17,13 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.closePath()
 }
 
+function fitText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
+  if (ctx.measureText(text).width <= maxWidth) return text
+  let t = text
+  while (t.length > 1 && ctx.measureText(`${t}…`).width > maxWidth) t = t.slice(0, -1)
+  return `${t}…`
+}
+
 function rgba(hex: string, a: number) {
   const n = parseInt(hex.slice(1), 16)
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`
@@ -67,7 +74,7 @@ function draw(ctx: CanvasRenderingContext2D, W: number, H: number, time: number)
         case 'CONFIRMING': {
           stroke = HEX.warn
           fill = rgba(HEX.warn, 0.14 + 0.05 * pulse)
-          banner = `PINCH TO ${intent.action ?? 'CONFIRM'}`
+          banner = z.kind === 'digital' ? 'PINCH TO CONFIRM' : `PINCH TO ${intent.action ?? 'CONFIRM'}`
           progress = intent.progress.confirmation_timeout_s > 0 ? intent.progress.confirmation_remaining_s / intent.progress.confirmation_timeout_s : 0
           progressHex = HEX.warn
           break
@@ -117,13 +124,18 @@ function draw(ctx: CanvasRenderingContext2D, W: number, H: number, time: number)
     ctx.font = '600 12px Inter, system-ui, sans-serif'
     ctx.textBaseline = 'top'
     ctx.fillStyle = 'rgba(234,241,250,0.92)'
-    ctx.fillText(z.label.toUpperCase(), x + 14, y + 12)
+    ctx.fillText(fitText(ctx, z.label.toUpperCase(), w - 28), x + 14, y + 12)
     const dev = devices[z.device]
     ctx.font = '500 11px ui-monospace, Menlo, Consolas, monospace'
     ctx.fillStyle = 'rgba(135,150,170,0.95)'
-    const st = dev ? `${dev.confirmed_state}${dev.simulated ? ' · sim' : ''}` : '—'
+    const digital = z.kind === 'digital'
+    const st = digital
+      ? `digital · ${z.action ?? 'control'}`
+      : dev
+        ? `${dev.confirmed_state}${dev.simulated ? ' · sim' : ''}`
+        : '—'
     ctx.textBaseline = 'bottom'
-    ctx.fillText(`state: ${st}`, x + 14, y + h - 12)
+    ctx.fillText(fitText(ctx, `state: ${st}`, w - 28), x + 14, y + h - 12)
 
     if (banner) {
       ctx.font = '700 11px Inter, system-ui, sans-serif'

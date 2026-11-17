@@ -1,8 +1,10 @@
 import { create } from 'zustand'
 import { defaultSettings } from './core/config'
 import type { AnalyticsSummary, AppSettings, CameraState, DeviceTwin, IntentSnapshot, LogEntry, VisionFrame, Zone } from './core/types'
+import { initialModeStates } from './modes/registry'
+import type { ModeId, ModeState } from './modes/types'
 
-export type Page = 'live' | 'twin' | 'analytics' | 'settings'
+export type Page = 'modes' | 'workspace' | 'live' | 'twin' | 'analytics' | 'settings'
 export type PointerGesture = 'open_palm' | 'pinch' | 'fist' | 'point'
 
 export function idleSnapshot(): IntentSnapshot {
@@ -16,6 +18,10 @@ export function idleSnapshot(): IntentSnapshot {
 
 export interface ConduitState {
   page: Page
+  /** Active operational environment. `null` until the operator enters a mode. */
+  activeMode: ModeId | null
+  /** Per-mode dashboard/workflow state, preserved when switching environments. */
+  modeState: Record<ModeId, ModeState>
   runtimeKind: 'probing' | 'backend' | 'browser'
   backendUrl: string
   link: 'connecting' | 'open' | 'closed'
@@ -40,7 +46,9 @@ export interface ConduitState {
 }
 
 export const useConduit = create<ConduitState>(() => ({
-  page: 'live',
+  page: 'modes',
+  activeMode: null,
+  modeState: initialModeStates(),
   runtimeKind: 'probing',
   backendUrl: '',
   link: 'connecting',

@@ -12,7 +12,7 @@ from typing import Callable, Dict, Optional
 
 from backend.database.repository import Repository
 from backend.hardware.controller import DeviceController
-from backend.hardware.models import CommandStatus, DeviceCommand
+from backend.hardware.models import DEVICE_SPECS, CommandResult, CommandStatus, DeviceCommand
 from backend.intent.baseline import BaselineController
 from backend.intent.engine import CommandRequest, IntentEngine, IntentEvent, InteractionInput
 from backend.models.schemas import AppSettings
@@ -34,6 +34,7 @@ class ConduitRuntime:
         self.engine = IntentEngine(settings.intent, device_states=self.controller.device_states)
         self.baseline = BaselineController(device_states=self.controller.device_states)
         self.interaction_mode = settings.interaction_mode
+        self.workspace_mode = settings.workspace_mode
         self.clock: Callable[[], float] = time.monotonic
         self._worker_factory = worker_factory
         self.worker = None
@@ -206,7 +207,67 @@ class ConduitRuntime:
         self._tasks.add(t)
         t.add_done_callback(self._tasks.discard)
 
+    # -------------------------------------------------- mode-layer execution
+    def _digital_zone(self, req: CommandRequest):
+        """A zone that belongs to the active mode's *digital* control surface.
+
+        Digital controls are still authorised by the Intent Engine (selection, dwell,
+        confidence, pinch confirmation, cooldown, duplicate prevention) but they never reach
+        the device controller and are never reported as physical hardware execution.
+        """
+        for z in self.settings.intent.zones:
+            if z.device == req.device and z.kind == "digital":
+                return z
+        return None
+
+    async def _dispatch_digital(self, req: CommandRequest, zone) -> None:
+        t0 = time.perf_counter()
+        valid = req.action == (zone.action or req.action)
+        self.repo.log_command(req.command_id, req.device, req.action, req.source, "SENT", "mode_ui", req.confidence)
+        res = CommandResult(
+            command_id=req.command_id, device=req.device, action=req.action, source=req.source,
+            status=CommandStatus.CONFIRMED if valid else CommandStatus.REJECTED,
+            detail=(f"Digital control '{zone.label}' executed in the mode layer (no physical device)"
+                    if valid else f"Action '{req.action}' is not the configured action for '{zone.label}'"),
+            acknowledged=valid, simulated=True, executed_on="mode_ui", digital=True,
+            confirmed_state=req.action if valid else None,
+            latency_ms=(time.perf_counter() - t0) * 1000,
+        )
+        ack = res.model_dump(mode="json")
+        self.repo.update_command(req.command_id, res.status.value, ack, res.latency_ms)
+        self.analytics.record_command(ack)
+        self.bus.publish("command_sent", {"command_id": req.command_id, "device": req.device, "action": req.action,
+                                          "source": req.source, "status": "SENT", "executed_on": "mode_ui",
+                                          "simulated": True, "digital": True, "sandbox": True,
+                                          "confidence": req.confidence})
+        if valid:
+            self.bus.publish("command_acknowledged", {**ack, "ack_latency_ms": res.latency_ms, "workspace": self.workspace_mode})
+            self.bus.publish("mode_action", {
+                "command_id": req.command_id, "device": req.device, "action": req.action, "source": req.source,
+                "workspace": self.workspace_mode, "status": res.status.value, "digital": True, "simulated": True,
+                "detail": res.detail, "latency_ms": res.latency_ms, "label": zone.label,
+            })
+        else:
+            self.bus.publish("command_rejected", ack)
+        if req.source == "conduit_intent_engine" and self.interaction_mode == "conduit":
+            ok = res.status == CommandStatus.CONFIRMED
+            for ev in self.engine.notify_command_result(ok, res.detail, self.clock()):
+                self._handle_intent_event(ev)
+
     async def _dispatch(self, req: CommandRequest) -> None:
+        if req.device not in DEVICE_SPECS:
+            zone = self._digital_zone(req)
+            if zone is not None:
+                await self._dispatch_digital(req, zone)
+                return
+            # Unknown device: never forwarded anywhere, the engine is told the execution failed.
+            self.bus.publish("command_rejected", {"command_id": req.command_id, "device": req.device,
+                                                  "action": req.action, "status": "REJECTED", "digital": False,
+                                                  "detail": f"Device '{req.device}' is not part of the active mode"})
+            if req.source == "conduit_intent_engine" and self.interaction_mode == "conduit":
+                for ev in self.engine.notify_command_result(False, f"Unknown device '{req.device}'", self.clock()):
+                    self._handle_intent_event(ev)
+            return
         cmd = DeviceCommand(command_id=req.command_id, device=req.device, action=req.action, source=req.source,
                             confidence=req.confidence)
         node = self.controller._node_for(cmd)
@@ -263,7 +324,10 @@ class ConduitRuntime:
     async def apply_settings(self, new: AppSettings) -> None:
         old = self.settings
         new.privacy.store_video = False
+        zones_changed = old.intent.zones != new.intent.zones
+        workspace_changed = old.workspace_mode != new.workspace_mode
         self.settings = new
+        self.workspace_mode = new.workspace_mode
         self.engine.set_config(new.intent)
         self.controller.min_confidence = new.intent.min_confidence
         self.controller.configure_hardware(new.esp32.host, new.esp32.port, new.esp32.timeout_s)
@@ -273,6 +337,12 @@ class ConduitRuntime:
             await self.controller.set_mode(new.hardware_mode)
         elif new.hardware_mode == "hardware":
             await self.controller.refresh()
+        if zones_changed or workspace_changed:
+            # Changing mode configures the *same* engine instance and never restarts vision.
+            self.engine.reset()
+            self.baseline.reset()
+            self.bus.publish("workspace_changed", {"workspace_mode": new.workspace_mode,
+                                                   "zones": [z.model_dump() for z in new.intent.zones]})
         self._save()
         self.bus.publish("settings_changed", {"settings": new.model_dump(mode="json")})
 
@@ -287,6 +357,7 @@ class ConduitRuntime:
             "camera": {**self.camera_status, "preview_stream": self.settings.privacy.preview_stream},
             "vision_running": bool(w and w.is_alive()),
             "interaction_mode": self.interaction_mode,
+            "workspace_mode": self.workspace_mode,
             "hardware_mode": self.controller.mode,
             "intent": self.engine.snapshot() if self.interaction_mode == "conduit" else None,
             "devices": self.controller.snapshot(),
@@ -294,6 +365,8 @@ class ConduitRuntime:
             "privacy": {"video_stored": False, "cloud_upload": False, "processing": "local",
                         "camera_active": bool(self.camera_status.get("active"))},
             "zones": [z.model_dump() for z in self.settings.intent.zones],
+            "zone_controls": [{"id": z.id, "label": z.label, "device": z.device, "kind": z.kind,
+                               "action": z.action or None, "hint": z.hint} for z in self.settings.intent.zones],
             "clients": self.bus.subscriber_count,
             "disclaimer": "Prototype for isolated low-voltage demonstration only; not a certified medical, industrial or safety-critical system.",
         }

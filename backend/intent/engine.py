@@ -593,7 +593,7 @@ class IntentEngine:
         self._last_activity = t
         self.state = IntentState.SELECTING
         self._state_t0 = t
-        self.action = toggle_action(zone.device, self._device_states().get(zone.device))
+        self.action = toggle_action(zone.device, self._device_states().get(zone.device), zone.action)
         self.confidence, self.components = self._score(False)
         self.selection_confidence = self.confidence
         self._emit("state_changed", False, f"Hand entered {zone.label} zone — evaluating dwell and stability", "SELECTING")
@@ -615,7 +615,7 @@ class IntentEngine:
         self._stab_ema += 0.25 * (self.metrics.stability - self._stab_ema)
         self.selection_confidence, self.components = self._score(False)
         self.confidence = self.selection_confidence
-        self.action = toggle_action(zone.device, self._device_states().get(zone.device))
+        self.action = toggle_action(zone.device, self._device_states().get(zone.device), zone.action)
 
         if self._dwell >= cfg.min_dwell_s:
             if self.metrics.stability < cfg.stability_threshold:
@@ -643,7 +643,7 @@ class IntentEngine:
         self._last_activity = t
         self._dwell = self.traj.dwell(zone.id, t) if self._hovered == self.target else self._dwell
         self._stab_ema += 0.1 * (self.metrics.stability - self._stab_ema)
-        self.action = toggle_action(zone.device, self._device_states().get(zone.device))
+        self.action = toggle_action(zone.device, self._device_states().get(zone.device), zone.action)
 
         if self._hovered != self.target:
             if self._left_since is None:

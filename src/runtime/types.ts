@@ -1,4 +1,4 @@
-import type { AppSettings } from '../core/types'
+import type { AppSettings, Zone } from '../core/types'
 
 /** The UI talks only to this interface; it is implemented by the FastAPI backend client and by the in-browser runtime. */
 export interface Runtime {
@@ -15,6 +15,7 @@ export interface Runtime {
   deactivate(): Promise<void>
   cancel(): Promise<void>
   setInteractionMode(m: 'conduit' | 'baseline'): Promise<void>
+  setWorkspaceMode(mode: string, zones: Zone[]): Promise<void>
   testDevice(id: string, action: string): Promise<void>
   setHardwareMode(m: 'simulation' | 'hardware'): Promise<void>
   connectHardware(): Promise<void>

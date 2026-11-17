@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Btn, Card, Empty, Field, Pill, inputCls } from '../components/ui'
 import { DEVICE_SPECS } from '../core/config'
+import { getMode } from '../modes/registry'
 import type { Metrics } from '../core/types'
 import { rt } from '../runtime'
 import { useConduit } from '../store'
@@ -26,16 +27,33 @@ function SessionControl() {
   const [newMode, setNewMode] = useState<'baseline' | 'conduit'>(mode)
   const [note, setNote] = useState('')
   const [label, setLabel] = useState<'intended' | 'unintended'>('intended')
-  const [target, setTarget] = useState('lighting')
+  const active = useConduit((s) => s.activeMode)
+  const activeMode = getMode(active)
+  const targetOptions = [
+    ...Object.values(DEVICE_SPECS).map((d) => ({ id: d.id, label: `${d.name} · shared node` })),
+    ...(activeMode?.controls.filter((c) => c.kind === 'digital').map((c) => ({ id: c.device, label: `${c.label} · digital (${activeMode.shortName})` })) ?? []),
+  ]
+  const [target, setTarget] = useState(targetOptions[0]?.id ?? 'lighting')
   const [scenario, setScenario] = useState('')
 
   useEffect(() => {
     setScenario(SCENARIOS[label][0])
   }, [label])
+  useEffect(() => {
+    if (!targetOptions.some((o) => o.id === target)) setTarget(targetOptions[activeMode ? Object.values(DEVICE_SPECS).length : 0]?.id ?? 'lighting')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active])
 
   if (!st?.session_active) {
     return (
-      <Card title="Start a test session" icon={<FlaskConical className="size-4" />}>
+      <Card
+        title="Start a test session"
+        icon={<FlaskConical className="size-4" />}
+        right={<Pill tone="accent">{activeMode ? activeMode.shortName : 'no environment'}</Pill>}
+      >
+        <p className="mb-3 text-[11px] leading-relaxed text-muted">
+          The active environment is recorded with every session and trial. Results are never pre-filled — run the same scenarios in each environment you want to compare.
+        </p>
         <div className="grid gap-3 sm:grid-cols-[220px_1fr_auto] sm:items-end">
           <Field label="Interaction mode under test">
             <select className={inputCls} value={newMode} onChange={(e) => setNewMode(e.target.value as 'baseline' | 'conduit')}>
@@ -57,7 +75,7 @@ function SessionControl() {
   const tr = st.trial
   return (
     <Card
-      title={`Session #${st.session_id} · ${st.mode === 'conduit' ? 'Conduit intent control' : 'Baseline gesture control'}`}
+      title={`Session #${st.session_id} · ${st.mode === 'conduit' ? 'Conduit intent control' : 'Baseline gesture control'} · ${getMode(st.workspace)?.shortName ?? st.workspace ?? activeMode?.shortName ?? 'environment'}`}
       icon={<FlaskConical className="size-4" />}
       right={
         <Btn size="sm" variant="danger" onClick={() => void rt().stopSession()}>
@@ -75,9 +93,9 @@ function SessionControl() {
           </Field>
           <Field label="Intended target">
             <select className={inputCls} value={target} disabled={label === 'unintended'} onChange={(e) => setTarget(e.target.value)}>
-              {Object.values(DEVICE_SPECS).map((d) => (
+              {targetOptions.map((d) => (
                 <option key={d.id} value={d.id}>
-                  {d.name}
+                  {d.label}
                 </option>
               ))}
             </select>
@@ -100,7 +118,7 @@ function SessionControl() {
             <p className="flex items-center gap-2 text-sm font-medium text-ink">
               <span className="size-2 animate-soft-pulse rounded-full bg-danger" />
               Trial running · <span className={tr.label === 'intended' ? 'text-teal' : 'text-warn'}>{tr.label}</span>
-              {tr.target ? ` → ${DEVICE_SPECS[tr.target]?.name ?? tr.target}` : ''}
+              {tr.target ? ` → ${DEVICE_SPECS[tr.target]?.name ?? activeMode?.controls.find((c) => c.device === tr.target)?.label ?? tr.target}` : ''}
             </p>
             <p className="mt-1 text-xs text-muted">
               Now perform: <b className="text-ink">{tr.scenario || '—'}</b>. Press “End trial” when finished.
@@ -131,6 +149,7 @@ function compare(b: Metrics, c: Metrics): { rates: Row[]; counts: Row[] } {
       { metric: 'Deliberate success', baseline: p(b.deliberate_success_rate), conduit: p(c.deliberate_success_rate) },
       { metric: 'Device ack rate', baseline: p(b.device_ack_rate), conduit: p(c.device_ack_rate) },
       { metric: 'Confirmation requests', baseline: p(b.confirmation_request_rate), conduit: p(c.confirmation_request_rate) },
+      { metric: 'Confirmation success', baseline: p(b.confirmation_success_rate), conduit: p(c.confirmation_success_rate) },
     ],
     counts: [
       { metric: 'Attempts', baseline: b.attempts, conduit: c.attempts },
@@ -211,7 +230,9 @@ export function AnalyticsPage() {
                     <p className="text-muted">Intent processing / frame</p>
                     <p className="mb-2 font-mono text-base text-ink">{ms(a.by_mode[m].avg_intent_latency_ms)}</p>
                     <p className="text-muted">End-to-end command</p>
-                    <p className="font-mono text-base text-ink">{ms(a.by_mode[m].avg_e2e_latency_ms)}</p>
+                    <p className="mb-2 font-mono text-base text-ink">{ms(a.by_mode[m].avg_e2e_latency_ms)}</p>
+                    <p className="text-muted">Operator task duration</p>
+                    <p className="font-mono text-base text-ink">{a.by_mode[m].avg_task_duration_s == null ? '—' : `${a.by_mode[m].avg_task_duration_s!.toFixed(1)} s`}</p>
                   </div>
                 ))}
               </div>
@@ -238,6 +259,8 @@ export function AnalyticsPage() {
                       ['Accidental rejected', (m: Metrics) => `${m.accidental_rejected} (${pct(m.accidental_rejection_rate)})`],
                       ['Device ack rate', (m: Metrics) => pct(m.device_ack_rate)],
                       ['Confirmation requests', (m: Metrics) => `${m.confirmation_requests} (${pct(m.confirmation_request_rate)})`],
+                      ['Confirmation success', (m: Metrics) => pct(m.confirmation_success_rate)],
+                      ['Avg task duration', (m: Metrics) => (m.avg_task_duration_s == null ? '—' : `${m.avg_task_duration_s.toFixed(1)} s`)],
                     ] as [string, (m: Metrics) => string][]
                   ).map(([label, f]) => (
                     <tr key={label}>
@@ -251,12 +274,43 @@ export function AnalyticsPage() {
             </Card>
           </div>
 
-          <Card title="Test session history" icon={<ClipboardList className="size-4" />} pad={false}>
+          <Card title="Environment comparison" icon={<BarChart3 className="size-4" />} pad={false}>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[640px] text-xs">
                 <thead>
                   <tr className="border-b border-line/70 text-left text-muted">
-                    {['#', 'Mode', 'Started', 'Attempts', 'Deliberate ✓', 'False activations', 'Note'].map((h) => (
+                    {['Environment', 'Sessions', 'Attempts', 'Deliberate ✓', 'False activations', 'Accidental rejected', 'Device ACK rate', 'Avg end-to-end'].map((h) => (
+                      <th key={h} className="px-4 py-2 font-medium">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-line/40">
+                  {Object.entries(a.by_workspace ?? {}).map(([ws, m]) => (
+                    <tr key={ws}>
+                      <td className="px-4 py-2 font-medium text-ink">{getMode(ws)?.shortName ?? ws}</td>
+                      <td className="px-4 py-2 font-mono text-muted">{a.sessions.filter((s) => (s.workspace || 'hospital') === ws).length}</td>
+                      <td className="px-4 py-2 font-mono">{m.attempts}</td>
+                      <td className="px-4 py-2 font-mono">{m.successful_deliberate}/{m.intended_trials} ({pct(m.deliberate_success_rate)})</td>
+                      <td className="px-4 py-2 font-mono">{m.false_activations}/{m.unintended_trials}</td>
+                      <td className="px-4 py-2 font-mono">{m.accidental_rejected}/{m.unintended_trials}</td>
+                      <td className="px-4 py-2 font-mono">{pct(m.device_ack_rate)}</td>
+                      <td className="px-4 py-2 font-mono">{ms(m.avg_e2e_latency_ms)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="border-t border-line/60 px-4 py-3 text-[11px] leading-relaxed text-muted">
+              Environments are only comparable when the same operator runs the same declared scenarios in each one. Small samples are indicative only.
+            </p>
+          </Card>
+
+          <Card title="Test session history" icon={<ClipboardList className="size-4" />} pad={false}>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] text-xs">
+                <thead>
+                  <tr className="border-b border-line/70 text-left text-muted">
+                    {['#', 'Mode', 'Environment', 'Started', 'Attempts', 'Deliberate ✓', 'False activations', 'Note'].map((h) => (
                       <th key={h} className="px-4 py-2 font-medium">
                         {h}
                       </th>
@@ -268,6 +322,7 @@ export function AnalyticsPage() {
                     <tr key={s.id}>
                       <td className="px-4 py-2 font-mono text-muted">{s.id}</td>
                       <td className={cn('px-4 py-2 font-medium', s.mode === 'conduit' ? 'text-teal' : 'text-warn')}>{s.mode}</td>
+                      <td className="px-4 py-2 text-muted">{getMode(s.workspace)?.shortName ?? s.workspace ?? '—'}</td>
                       <td className="px-4 py-2 text-muted">{new Date(s.start_time * 1000).toLocaleString()}{!s.end_time && ' · running'}</td>
                       <td className="px-4 py-2 font-mono">{s.metrics?.attempts ?? 0}</td>
                       <td className="px-4 py-2 font-mono">{s.metrics ? `${s.metrics.successful_deliberate}/${s.metrics.intended_trials}` : '—'}</td>

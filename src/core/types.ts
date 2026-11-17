@@ -11,6 +11,12 @@ export interface Zone {
   y0: number
   x1: number
   y1: number
+  /** Explicit command action. Omitted = toggle the device state (classic behaviour). */
+  action?: string | null
+  /** `physical` = ESP32 node, `digital` = mode-layer UI control (never hardware). */
+  kind?: 'physical' | 'digital'
+  /** Short helper text shown on the mode dashboard / camera overlay. */
+  hint?: string
 }
 
 export interface IntentConfig {
@@ -42,6 +48,7 @@ export interface IntentConfig {
 }
 
 export interface AppSettings {
+  workspace_mode: string
   hardware_mode: 'simulation' | 'hardware'
   interaction_mode: 'conduit' | 'baseline'
   esp32: { host: string; port: number; timeout_s: number }
@@ -172,6 +179,7 @@ export interface CommandResult {
   ack_latency_ms: number | null
   acknowledged: boolean
   executed_on: string
+  digital?: boolean
 }
 
 export interface DeviceTwin {
@@ -221,11 +229,14 @@ export interface Metrics {
   device_ack_rate: number | null
   confirmation_requests: number
   confirmation_request_rate: number | null
+  confirmation_success_rate: number | null
+  avg_task_duration_s: number | null
 }
 
 export interface SessionSummary {
   id: number
   mode: 'baseline' | 'conduit'
+  workspace: string
   note: string
   start_time: number
   end_time: number | null
@@ -239,6 +250,7 @@ export interface TrialStatus {
   session_active: boolean
   session_id: number | null
   mode: string | null
+  workspace?: string | null
   trial_active: boolean
   trial: { label: string; target: string | null; scenario: string; started_at: number; executed: boolean; rejections: number; confirmation_requested: boolean; commands_sent: number } | null
 }
@@ -248,6 +260,7 @@ export interface AnalyticsSummary {
   total_trials: number
   sessions: SessionSummary[]
   by_mode: { baseline: Metrics; conduit: Metrics }
+  by_workspace: Record<string, Metrics>
   status: TrialStatus
   definitions: Record<string, string>
 }

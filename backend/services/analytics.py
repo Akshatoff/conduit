@@ -21,6 +21,9 @@ avg_e2e_latency_ms          mean time from command issue (intent validated) to d
 device_ack_rate             commands acknowledged by the device / commands sent
 confirmation_request_rate   trials in which the system explicitly asked for confirmation / attempts
 
+Every session and trial also carries the active operational environment (workspace), so results
+from different modes can be compared without mixing them. Sessions are never pre-seeded.
+
 A high rejection count is NOT evidence of accuracy by itself - read it together with
 deliberate_success_rate (a system that rejects everything has a perfect accidental rejection
 rate and a useless success rate).
@@ -49,6 +52,8 @@ METRIC_DEFINITIONS = {
     "avg_e2e_latency_ms": "Mean time from validated command to CONFIRMED device state.",
     "device_ack_rate": "Commands acknowledged by the device / commands sent.",
     "confirmation_request_rate": "Trials with an explicit confirmation request / attempts.",
+    "confirmation_success_rate": "Trials with a confirmation request that ended in an executed command / trials with a confirmation request.",
+    "avg_task_duration_s": "Mean trial duration from Start trial to End trial (operator-declared task completion time).",
 }
 
 
@@ -68,6 +73,13 @@ def compute_metrics(trials: List[Dict[str, Any]]) -> Dict[str, Any]:
     e2e = [t["e2e_latency_ms"] for t in trials if t.get("e2e_latency_ms") is not None]
     sent = sum(t.get("commands_sent", 0) for t in trials)
     acked = sum(t.get("commands_acked", 0) for t in trials)
+    confirmed_trials = [t for t in trials if t.get("confirmation_requested")]
+    confirmation_success = [t for t in confirmed_trials if t["executed"]]
+    durations = [
+        t["ended_at"] - t["started_at"]
+        for t in trials
+        if t.get("ended_at") is not None and t.get("started_at") is not None
+    ]
     return {
         "attempts": len(trials),
         "intended_trials": len(intended),
@@ -86,7 +98,9 @@ def compute_metrics(trials: List[Dict[str, Any]]) -> Dict[str, Any]:
         "commands_acked": acked,
         "device_ack_rate": _ratio(acked, sent),
         "confirmation_requests": sum(1 for t in trials if t.get("confirmation_requested")),
-        "confirmation_request_rate": _ratio(sum(1 for t in trials if t.get("confirmation_requested")), len(trials)),
+        "confirmation_request_rate": _ratio(len(confirmed_trials), len(trials)),
+        "confirmation_success_rate": _ratio(len(confirmation_success), len(confirmed_trials)),
+        "avg_task_duration_s": (sum(durations) / len(durations)) if durations else None,
     }
 
 
@@ -99,6 +113,7 @@ class AnalyticsService:
         self.sf = session_factory
         self.session_id: Optional[int] = None
         self.session_mode: Optional[str] = None
+        self.session_workspace: Optional[str] = None
         self.trial: Optional[Dict[str, Any]] = None
 
     # ----------------------------------------------------------------- state
@@ -109,22 +124,23 @@ class AnalyticsService:
     def status(self) -> dict:
         return {
             "session_active": self.active, "session_id": self.session_id, "mode": self.session_mode,
+            "workspace": self.session_workspace,
             "trial_active": self.trial is not None,
             "trial": ({k: self.trial[k] for k in ("label", "target", "scenario", "started_at", "executed", "rejections",
                                                    "confirmation_requested", "commands_sent")} if self.trial else None),
         }
 
     # -------------------------------------------------------------- sessions
-    def start_session(self, mode: str, note: str = "") -> int:
+    def start_session(self, mode: str, note: str = "", workspace: str = "hospital") -> int:
         if mode not in ("baseline", "conduit"):
             raise ValueError("mode must be 'baseline' or 'conduit'")
         if self.active:
             raise RuntimeError("A test session is already running")
         with self.sf() as s:
-            row = TestSessionRow(mode=mode, note=note, start_time=time.time())
+            row = TestSessionRow(mode=mode, note=note, workspace=workspace, start_time=time.time())
             s.add(row)
             s.commit()
-            self.session_id, self.session_mode = row.id, mode
+            self.session_id, self.session_mode, self.session_workspace = row.id, mode, workspace
         return self.session_id
 
     def stop_session(self) -> Optional[dict]:
@@ -143,7 +159,7 @@ class AnalyticsService:
             row.metrics_json = json.dumps(m)
             s.commit()
             out = self._session_dict(row, m)
-        self.session_id = self.session_mode = None
+        self.session_id = self.session_mode = self.session_workspace = None
         return out
 
     # ---------------------------------------------------------------- trials
@@ -156,7 +172,8 @@ class AnalyticsService:
             raise ValueError("An intended trial needs a target device")
         if self.trial:
             self.end_trial()
-        self.trial = dict(session_id=self.session_id, label=label, target=target, scenario=scenario, started_at=time.time(),
+        self.trial = dict(session_id=self.session_id, label=label, target=target, scenario=scenario,
+                          workspace=self.session_workspace or "hospital", started_at=time.time(),
                           executed=False, executed_device=None, executed_action=None, correct=False, ack_confirmed=False,
                           commands_sent=0, commands_acked=0, confirmation_requested=False, rejections=0, reasons=[],
                           intent_latency_sum_ms=0.0, intent_latency_n=0, e2e_latency_ms=None)
@@ -215,7 +232,8 @@ class AnalyticsService:
     @staticmethod
     def _session_dict(row: TestSessionRow, metrics: Optional[dict] = None) -> dict:
         m = metrics if metrics is not None else (json.loads(row.metrics_json) if row.metrics_json else None)
-        return {"id": row.id, "mode": row.mode, "note": row.note, "start_time": row.start_time, "end_time": row.end_time,
+        return {"id": row.id, "mode": row.mode, "workspace": getattr(row, "workspace", "hospital") or "hospital",
+                "note": row.note, "start_time": row.start_time, "end_time": row.end_time,
                 "attempts": row.attempts, "successes": row.successes, "unintended": row.unintended, "metrics": m}
 
     def summary(self) -> dict:
@@ -234,22 +252,35 @@ class AnalyticsService:
                 ids = {r.id for r in sessions if r.mode == mode}
                 mt = [t for t in trials if t["session_id"] in ids]
                 by_mode[mode] = compute_metrics(mt)
+            # Per-environment comparison: only environments that actually have sessions appear here.
+            workspaces = []
+            for r in sessions:
+                w = getattr(r, "workspace", None) or "hospital"
+                if w not in workspaces:
+                    workspaces.append(w)
+            by_workspace = {}
+            for w in workspaces:
+                ids = {r.id for r in sessions if (getattr(r, "workspace", None) or "hospital") == w}
+                mt = [t for t in trials if t["session_id"] in ids]
+                by_workspace[w] = compute_metrics(mt)
         return {"has_data": len(trials) > 0, "total_trials": len(trials), "sessions": sess_out, "by_mode": by_mode,
-                "status": self.status(), "definitions": METRIC_DEFINITIONS}
+                "by_workspace": by_workspace, "status": self.status(), "definitions": METRIC_DEFINITIONS}
 
     def export_csv(self) -> str:
         with self.sf() as s:
-            modes = {r.id: r.mode for r in s.scalars(select(TestSessionRow))}
+            sessions = {r.id: r for r in s.scalars(select(TestSessionRow))}
+            modes = {r.id: r.mode for r in sessions.values()}
             rows = list(s.scalars(select(TrialRow).order_by(TrialRow.id)))
-        cols = ["session_id", "mode", "trial_id", "label", "target", "scenario", "started_at", "ended_at", "executed",
-                "executed_device", "executed_action", "correct", "ack_confirmed", "commands_sent", "commands_acked",
-                "confirmation_requested", "rejections", "reasons", "intent_latency_ms_avg", "e2e_latency_ms"]
+        cols = ["session_id", "mode", "workspace", "trial_id", "label", "target", "scenario", "started_at", "ended_at",
+                "executed", "executed_device", "executed_action", "correct", "ack_confirmed", "commands_sent",
+                "commands_acked", "confirmation_requested", "rejections", "reasons", "intent_latency_ms_avg", "e2e_latency_ms"]
         buf = io.StringIO()
         w = csv.writer(buf)
         w.writerow(cols)
         for r in rows:
             avg = (r.intent_latency_sum_ms / r.intent_latency_n) if r.intent_latency_n else ""
-            w.writerow([r.session_id, modes.get(r.session_id, ""), r.id, r.label, r.target or "", r.scenario, r.started_at,
+            session = sessions.get(r.session_id)
+            w.writerow([r.session_id, modes.get(r.session_id, ""), getattr(r, "workspace", None) or (getattr(session, "workspace", None) if session else "") or "", r.id, r.label, r.target or "", r.scenario, r.started_at,
                         r.ended_at, int(r.executed), r.executed_device or "", r.executed_action or "", int(r.correct),
                         int(r.ack_confirmed), r.commands_sent, r.commands_acked, int(r.confirmation_requested), r.rejections,
                         r.reasons, avg, "" if r.e2e_latency_ms is None else r.e2e_latency_ms])

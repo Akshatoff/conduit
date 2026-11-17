@@ -23,7 +23,29 @@ def make_engine(url: str | None = None):
     return create_engine(url, **kwargs)
 
 
+# Columns added after the first release. ``create_all`` does not alter existing tables, so an
+# existing local SQLite database is upgraded in place (additive only; no data is dropped).
+_ADDED_COLUMNS = {
+    "test_sessions": {"workspace": "VARCHAR(40) DEFAULT 'hospital'"},
+    "trials": {"workspace": "VARCHAR(40) DEFAULT 'hospital'"},
+}
+
+
+def _upgrade_sqlite(engine) -> None:
+    if engine.dialect.name != "sqlite":
+        return
+    with engine.begin() as conn:
+        for table, columns in _ADDED_COLUMNS.items():
+            existing = {row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table})")}
+            if not existing:  # table did not exist before create_all
+                continue
+            for name, ddl in columns.items():
+                if name not in existing:
+                    conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
+
+
 def make_session_factory(engine):
     from backend.models import db_models  # noqa: F401  (register tables)
     Base.metadata.create_all(engine)
+    _upgrade_sqlite(engine)
     return sessionmaker(bind=engine, expire_on_commit=False)

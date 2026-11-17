@@ -1,10 +1,13 @@
-import { BarChart3, Box, Camera, CameraOff, Cloud, Hand, Server, Settings2, X } from 'lucide-react'
+import { BarChart3, Box, Camera, CameraOff, Cloud, Hand, LayoutGrid, Layers, Server, Settings2, X } from 'lucide-react'
 import { useEffect, type ReactNode } from 'react'
+import { getMode } from '../modes/registry'
 import { useConduit, type Page } from '../store'
 import { cn } from '../utils/cn'
 import { Pill } from './ui'
 
 const NAV: { id: Page; label: string; icon: ReactNode }[] = [
+  { id: 'modes', label: 'Environments', icon: <LayoutGrid className="size-[18px]" /> },
+  { id: 'workspace', label: 'Workspace', icon: <Layers className="size-[18px]" /> },
   { id: 'live', label: 'Live Interaction', icon: <Hand className="size-[18px]" /> },
   { id: 'twin', label: 'Digital Twin', icon: <Box className="size-[18px]" /> },
   { id: 'analytics', label: 'Analytics', icon: <BarChart3 className="size-[18px]" /> },
@@ -41,6 +44,8 @@ export function Layout({ children }: { children: ReactNode }) {
   const link = useConduit((s) => s.link)
   const camera = useConduit((s) => s.camera)
   const hw = useConduit((s) => s.hardwareMode)
+  const activeMode = useConduit((s) => s.activeMode)
+  const mode = getMode(activeMode)
   const notice = useConduit((s) => s.notice)
   const go = (p: Page) => useConduit.setState({ page: p })
 
@@ -64,6 +69,12 @@ export function Layout({ children }: { children: ReactNode }) {
             ))}
           </nav>
           <div className="ml-auto flex flex-wrap items-center gap-2">
+            {mode && (
+              <button onClick={() => go('workspace')} className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface2/60 px-2.5 py-1 text-[11px] font-medium text-ink hover:border-accent/50" title="Active operational environment — open workspace">
+                <span className="size-2 rounded-full" style={{ background: mode.accent }} aria-hidden />
+                {mode.shortName}
+              </button>
+            )}
             <Pill tone={kind === 'backend' ? (link === 'open' ? 'teal' : 'warn') : kind === 'browser' ? 'warn' : 'neutral'} icon={kind === 'backend' ? <Server className="size-3" /> : <Cloud className="size-3" />}>
               {kind === 'probing' ? 'Detecting backend…' : kind === 'backend' ? (link === 'open' ? 'Python backend · live' : 'Backend reconnecting…') : 'Browser runtime'}
             </Pill>
@@ -88,11 +99,11 @@ export function Layout({ children }: { children: ReactNode }) {
       </footer>
 
       {/* mobile bottom navigation */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-line bg-bg/95 backdrop-blur md:hidden" aria-label="Main">
+      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-6 border-t border-line bg-bg/95 backdrop-blur md:hidden" aria-label="Main">
         {NAV.map((n) => (
           <button key={n.id} onClick={() => go(n.id)} className={cn('flex flex-col items-center gap-1 py-2.5 text-[10px] font-medium', page === n.id ? 'text-accent' : 'text-muted')}>
             {n.icon}
-            {n.label.split(' ')[0]}
+            {n.id === 'modes' ? 'Modes' : n.id === 'workspace' ? 'Space' : n.label.split(' ')[0]}
           </button>
         ))}
       </nav>

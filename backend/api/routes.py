@@ -188,7 +188,7 @@ async def session_start(body: SessionStartRequest, request: Request):
     try:
         if r.interaction_mode != body.mode:
             r.set_interaction_mode(body.mode)  # a session always runs in the mode it is labelled with
-        sid = r.analytics.start_session(body.mode, body.note)
+        sid = r.analytics.start_session(body.mode, body.note, body.workspace or r.workspace_mode)
     except (RuntimeError, ValueError) as e:
         raise HTTPException(409, str(e))
     r.bus.publish("analytics_updated", r.analytics.status())

@@ -1,6 +1,8 @@
 import { Cpu, FlaskConical, Lightbulb, Lock, PlugZap, Server, Unplug, Wifi, WifiOff, Wind } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { EventLog } from '../components/EventLog'
+import { ModeTwinPanel } from '../components/mode/ModeTwinPanel'
+import { getMode } from '../modes/registry'
 import { Btn, Card, Pill, type Tone } from '../components/ui'
 import type { DeviceTwin } from '../core/types'
 import { rt } from '../runtime'
@@ -149,6 +151,8 @@ export function TwinPage() {
   const mode = useConduit((s) => s.hardwareMode)
   const info = useConduit((s) => s.hardwareInfo)
   const kind = useConduit((s) => s.runtimeKind)
+  const active = useConduit((s) => s.activeMode)
+  const activeMode = getMode(active)
   const [tick, setTick] = useState(0)
   useEffect(() => {
     const i = setInterval(() => setTick((t) => t + 1), 1000) // refresh "x s ago"
@@ -178,6 +182,7 @@ export function TwinPage() {
             </div>
           </div>
           <div className="ml-auto flex flex-wrap items-center gap-2">
+            {activeMode && <Pill tone="accent">{activeMode.shortName} environment</Pill>}
             <div className="flex rounded-lg border border-line bg-bg/60 p-0.5 text-xs">
               {(['simulation', 'hardware'] as const).map((m) => (
                 <button key={m} onClick={() => void rt().setHardwareMode(m)} className={cn('rounded-md px-3 py-1.5 capitalize', mode === m ? 'bg-surface2 text-ink' : 'text-muted hover:text-ink')}>
@@ -202,6 +207,8 @@ export function TwinPage() {
           </div>
         </div>
       </Card>
+
+      <ModeTwinPanel />
 
       {list.length === 0 ? (
         <p className="text-sm text-muted">Waiting for device registration…</p>

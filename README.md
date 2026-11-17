@@ -10,8 +10,14 @@ Conduit:      hand tracked → movement analysed → context established → int
               → command validated → device controlled → acknowledgement → state verified
 ```
 
-Target settings (concept): healthcare workstations, food preparation, laboratories, industrial workstations and
-accessibility-oriented environments — anywhere touching a control surface is inconvenient or undesirable.
+Conduit is a **multi-environment platform**: one shared Intent Engine drives five explicitly different
+operational environments — hospital workstation, semiconductor cleanroom workstation, industrial
+maintenance, commercial kitchen and accessibility/adaptive interaction. Each environment has its own
+dashboard, virtual controls, workflows, demo data, digital-twin mapping and analytics, but **no environment
+gets its own intent logic**. See [`docs/MODES.md`](docs/MODES.md).
+
+Target settings: healthcare workstations, cleanroom manufacturing, food preparation, industrial service
+bays and accessibility-oriented environments — anywhere touching a control surface is inconvenient or undesirable.
 
 > **Prototype, not a certified system.** Conduit drives isolated low-voltage demo electronics only (LED, small DC fan,
 > SG90 servo with a model latch). It must not be connected to mains, real door locks, medical or industrial equipment, and
@@ -27,6 +33,31 @@ accessibility-oriented environments — anywhere touching a control surface is i
 | **Intent intelligence** | `backend/intent/` — trajectory analyser + deterministic 12-state machine + interpretable weighted score + temporal validation, cooldown, duplicate and repeat-selection prevention. Independent of MediaPipe. |
 | **Physical execution** | `backend/hardware/` — one controller for **simulation** and **ESP32** (HTTP/JSON): validation, command ids, acknowledgement, state read-back, timeouts, idempotency, failsafe. Firmware in `firmware/`. |
 | **Impact verification** | Digital twin updated *only* after ack + read-back; SQLite event/command log; Baseline-vs-Conduit trial analytics with CSV export (`docs/TEST_PROTOCOL.md`). |
+
+## Operational environments
+
+The application opens on a mode-selection screen. Entering an environment loads its dashboard, virtual
+controls (camera zones), workflows, demo data and device mappings into the **same** Intent Engine — the
+camera is not restarted and no second engine is created.
+
+| Environment | Problem it demonstrates | Highlights | Hardware |
+|---|---|---|---|
+| **Hospital / clinical** | Accessing information while hands are occupied, without repeatedly touching a shared screen | Fictional patient overview / records, sample imaging viewer with gesture zoom, checklist + procedure navigation, timer, simulated assistance request | shared LED |
+| **Semiconductor / cleanroom** | Following process instructions and inspection data with gloved hands | 5-stage simulated wafer flow, fictional wafer map + zoom, defect category selection, simulated inspection records, equipment dashboard | LED status, ventilation fan, servo model access |
+| **Industrial maintenance** | Reading procedures and recording findings while holding tools | Equipment readings, digital manual, repair-step navigation, inspection checklist, maintenance timer, simulated fault report + assistance | LED indicator, servo service latch |
+| **Food processing** | Following recipes and timers without touching a shared screen | Three fictional recipes, ingredient quantities, preparation steps, cooking timer, QC checklist, simulated order board | shared LED |
+| **Accessibility / adaptive** | A single fixed input method excludes people | Live dwell / confidence / stability / gesture configuration, large-control preset, large demo panels, reading view | shared LED |
+
+Every environment includes a guided demonstration script (auto-advancing as authorised actions occur),
+a **Reset demo** action, per-environment interaction history and explicit safety/scope statements.
+
+### Digital vs physical execution
+
+Zones may be `physical` (shared ESP32 nodes) or `digital` (mode-layer UI controls). Both must pass the
+full interaction-authorisation pipeline. Digital actions are acknowledged by the mode layer and labelled
+`digital / simulated` — they never reach the device controller and never update a physical twin. Physical
+states are still only confirmed after node ACK **and** independent read-back. Analytics record the active
+environment with every session and trial, and the CSV gains a `workspace` column.
 
 Interaction protocol (all gestures configurable in Settings):
 
@@ -90,18 +121,31 @@ camera, a server or Wi-Fi.
 
 ---
 
-## Demo script (≈ 4 minutes)
+## Demo script (≈ 6 minutes, multi-mode)
 
-1. **Live Interaction** → *Start camera*. Point out the red *CAMERA ACTIVE · LOCAL PROCESSING* badge.
-2. Show an open palm, hold still → ring fills → *Interaction activated*.
-3. **Accident:** wave/swipe across all three zones → nothing executes; log shows `TRANSIT — passed through … without dwelling`.
-4. **Deliberate:** move steadily into *Ventilation*, hold → zone turns amber *PINCH TO ON*, confidence bar clears the
-   threshold marker → **pinch** → *Awaiting device ACK…* → *CONFIRMED*.
-5. **Digital Twin:** fan spins, lifecycle bar `Sent → Acknowledged → State confirmed`, badge *SIMULATED STATE* (or real ESP32 hardware).
-6. Click *Simulate link failure*, repeat a command → `DISCONNECTED`, no ack, twin shows `UNKNOWN` (never a fake success).
-7. **Analytics:** run a Baseline session and a Conduit session with the scripted scenarios (`docs/TEST_PROTOCOL.md`),
-   show false-activation vs deliberate-success charts; export CSV.
-8. **Settings:** raise *Minimum confidence* live and show the engine becoming stricter.
+The full staged sequence is in [`docs/MODES.md`](docs/MODES.md#recommended-judge-demonstration-6-minutes).
+
+1. **Environments** → show the five cards, the shared pipeline ribbon and the prototype/safety labels.
+   Enter **Hospital**; note the fictional-data banner, the two control rails and the central approach corridor.
+2. **Activate + deliberate selection** → *Start camera* (or pointer simulator). Hold a still open palm →
+   activation ring fills → move up the corridor and toward **OVERVIEW**, hold → dwell/confidence clear the
+   thresholds → **pinch** → the panel opens with a digital acknowledgement.
+3. **Accident:** sweep a hand across both rails → nothing executes; the history/log shows a `TRANSIT`
+   rejection with its reason. This is the heart of the project: gesture ≠ intent.
+4. **Digital Twin:** select **LAMP** (shared LED) and show the lifecycle `Sent → Acknowledged → State
+   confirmed`; badge *SIMULATED STATE* (or real ESP32). Click *Simulate link failure*, repeat → `DISCONNECTED`,
+   no ack, twin shows `UNKNOWN` (never a fake success).
+5. **Semiconductor:** change environment (camera keeps running). Advance a process stage, open the fictional
+   wafer inspection, cycle zoom/defect, confirm a simulated record, then toggle **EQUIP LED**, **VENT FAN** and
+   **ACCESS**; show the mode indicators on the Twin page (`node` vs `ui`).
+6. **Industrial / Food:** briefly show one workflow each (manual → step → checklist → simulated fault; or
+   recipe → quantities → timer → QC/order). **Accessibility:** change dwell/confidence and the confirmation
+   gesture live, toggle large controls, and show the same engine becoming stricter/looser without a restart.
+7. **Analytics:** point out that nothing is pre-filled. Run the scripted scenarios (`docs/TEST_PROTOCOL.md`),
+   start a session in each environment you want to compare, show false-activation vs deliberate-success
+   charts and the environment table; export the CSV with its `workspace` column.
+8. **Settings:** raise *Minimum confidence* live and show the engine becoming stricter. **Reset demo** restores
+   a mode's dashboard, timer and interaction history.
 
 ---
 
@@ -116,12 +160,16 @@ camera, a server or Wi-Fi.
                                                                   ▼
                        hardware/controller.py  ── validation.py
                           │ SENT → ACK → read-back → CONFIRMED / FAILED / DISCONNECTED
-                 ┌────────┴─────────┐
+                 ┌────────┴─────────┐                         (digital devices never reach here)
         SimulatedNode          ESP32Node (HTTP) ─▶ firmware/conduit_node.ino ─▶ LED / fan / servo
                           ▼
-   digital twin state + SQLite (devices, commands, intent_events, test_sessions, trials)
+   digital twin state + SQLite (devices, commands, intent_events, test_sessions, trials + workspace)
                           ▼
    services/event_bus.py ─▶ api/ws.py (WebSocket) ─▶ React UI        api/routes.py (REST)
+                          ▲
+                 mode layer (src/modes): configuration, virtual controls, workflows, demo data,
+                 dashboards and reducers. It consumes authorised commands and publishes nothing
+                 back into the intent pipeline.
 ```
 
 ```
@@ -136,8 +184,11 @@ backend/
   services/   runtime.py analytics.py event_bus.py settings_store.py
 src/                         React + Vite + TS + Tailwind UI (the "frontend/")
   core/      TypeScript twins of the engine/controller/analytics (browser runtime)
+  modes/     mode registry + hospital/ semiconductor/ industrial/ food/ accessibility
+             (config, demoData, reducer, Dashboard) + mode state/actions
   runtime/   backendRuntime.ts (REST+WS)   localRuntime.ts (in-browser)
   pages/ components/ store.ts
+             pages: ModeSelectPage, WorkspacePage, LivePage, TwinPage, AnalyticsPage, SettingsPage
 firmware/conduit_node.ino    ESP32 firmware      docs/  HARDWARE.md TEST_PROTOCOL.md
 tests/                       pytest (Python)     tests_ts/  parity + UI smoke tests (TypeScript)
 ```
@@ -147,19 +198,21 @@ from the root; responsibilities are otherwise separated as specified.
 
 ### REST API
 
-`GET /api/health` · `GET /api/system/status` · `POST /api/vision/start|stop` · `GET /api/vision/cameras` ·
+`GET /api/health` · `GET /api/system/status` (incl. `workspace_mode`, `zones`, `zone_controls`) · `POST /api/vision/start|stop` · `GET /api/vision/cameras` ·
 `GET /api/vision/stream` (local MJPEG preview) · `GET /api/devices` · `GET /api/devices/{id}` ·
 `POST /api/devices/{id}/test` (**manual test**, flagged `manual_test`) · `POST /api/interaction/activate|deactivate|cancel|mode` ·
 `GET /api/intent/status|events` · `GET /api/commands` · `GET /api/analytics/summary` ·
 `POST /api/analytics/session/start|stop` · `POST /api/analytics/trial/start|end` · `GET /api/analytics/export` (CSV) ·
-`GET|PUT /api/settings` · `POST /api/hardware/mode|connect|simulate_fault`. OpenAPI docs at `/docs`.
+`GET|PUT /api/settings` (`workspace_mode`, per-mode `intent.zones`) · `POST /api/hardware/mode|connect|simulate_fault`.
+OpenAPI docs at `/docs`.
 
 ### WebSocket `/ws`
 
 Envelope `{type, timestamp, data}`. Server → UI: `snapshot`, `camera_status`, `hand_landmarks`, `trajectory_update`
 (trail + intent snapshot), `gesture_detected`, `intent_state_changed`, `device_selected`, `confirmation_required`,
 `command_sent`, `command_acknowledged`, `command_rejected`, `device_state_changed`, `analytics_updated`,
-`settings_changed`, `system_error`. UI → server (validated by Pydantic): `ping | activate | deactivate | cancel | snapshot`;
+`settings_changed`, `system_error`, **`mode_action`** (a digital mode-layer action was authorised and
+executed), **`workspace_changed`**. UI → server (validated by Pydantic): `ping | activate | deactivate | cancel | snapshot`;
 malformed messages return a `system_error` and never crash the socket.
 
 ### Safety & privacy behaviour
@@ -170,7 +223,9 @@ malformed messages return a `system_error` and never crash the socket.
 * **Baseline gesture commands are routed to the simulation only**, never to hardware, and the firmware refuses them too.
 * Hardware mode never fabricates an acknowledgement; on loss of the node the twin shows `UNKNOWN` and the firmware
   falls back to safe outputs (LED off, fan off, latch locked) after 8 s without host contact.
-* *Manual test* buttons are clearly labelled and logged with source `manual_test`.
+* *Manual test* buttons only exist on the Digital Twin device cards; they are clearly labelled and logged with
+  source `manual_test`. The mode control surface has **no manual shortcut** — every mode action must be authorised
+  by the Intent Engine.
 
 ---
 
@@ -182,9 +237,10 @@ scripts\test.bat
 
 | Suite | Command | Covers |
 |---|---|---|
-| Python (103 tests) | `python -m pytest -q` | landmark features & gestures (rotation/scale invariance), trajectory maths, **intent state transitions**, confidence threshold, accidental-movement rejection, confirmation/cancel/timeouts, cooldown & duplicate prevention, command validation, simulation acks, ESP32 failure/mocked HTTP, analytics definitions, SQLite, REST + WebSocket, full pipeline (synthetic landmarks → engine → controller → twin → DB → analytics) |
-| TS parity | `npx esbuild tests_ts/parity.ts --bundle --platform=node --outfile=.parity.cjs && node .parity.cjs` | TypeScript engine makes the same decisions as the Python engine |
-| UI smoke (optional) | `npm i --no-save jsdom ws`, bundle `tests_ts/ui-smoke.tsx` / `backend-smoke.tsx` with esbuild (`--loader:.css=empty --jsx=automatic --platform=node`), run with `node tests_ts/jsdom-harness.cjs <bundle> [url]` | all four screens render; browser runtime pipeline end-to-end; frontend ↔ live FastAPI over REST+WS incl. failure paths |
+| Python (113 tests) | `python -m pytest -q` | landmark features & gestures (rotation/scale invariance), trajectory maths, **intent state transitions**, confidence threshold, accidental-movement rejection, confirmation/cancel/timeouts, cooldown & duplicate prevention, command validation, simulation acks, ESP32 failure/mocked HTTP, analytics definitions, SQLite, REST + WebSocket, full pipeline (synthetic landmarks → engine → controller → twin → DB → analytics), **mode zones with explicit actions, digital execution never touching the twin, workspace analytics, API workspace round-trip** |
+| TS parity | `npm run test:parity` | TypeScript engine makes the same decisions as the Python engine |
+| TS modes | `npm run test:modes` | five environments, registry/workflow/zone integrity, one shared engine authorises each mode, accidental sweep rejected, mode history/reset |
+| UI smoke (optional) | `npm i --no-save jsdom ws`, bundle `tests_ts/ui-smoke.tsx` / `backend-smoke.tsx` with esbuild (`--loader:.css=empty --jsx=automatic --platform=node`), run with `node tests_ts/jsdom-harness.cjs <bundle> [url]` | all screens render incl. the environment screen; browser runtime pipeline end-to-end; entering a mode loads its dashboard/zones without restarting the camera; a digital control is confirmed in the mode layer and leaves physical twins untouched; frontend ↔ live FastAPI over REST+WS incl. failure paths and workspace persistence |
 
 None of the automated tests needs a camera or an ESP32.
 
@@ -216,6 +272,15 @@ None of the automated tests needs a camera or an ESP32.
   (reported as `relative_depth_estimate`), never a measured distance.
 * Gesture heuristics are rule-based (extension ratios, pinch distance); unusual hand shapes may classify as `other`.
 * Analytics are only as meaningful as the number of trials run (≥ 20 per mode recommended); small samples are flagged.
+* **Mode-layer limitations:** workflow preconditions (e.g. confirm an inspection only after opening it) are
+  evaluated in the UI; the backend validates intent authorisation and digital-vs-physical routing, not every
+  business rule. A digitally authorised action that is not applicable is clearly shown as such in the history.
+* Modes are demonstration scenarios only. The accessibility mode has not been co-designed with disabled users
+  and gesture interaction is not suitable for everyone.
+* Mode zone layouts are two rails with a central corridor; real-camera rehearsals may still need threshold
+  tuning or the accessibility large-control preset.
+* Workflow completion is shown live per environment (steps and percentage) but is not persisted as a trial
+  metric; the analytics summary records session/trial outcomes, latency, ACK rate and environment.
 * The browser runtime talks to an ESP32 directly over plain HTTP, so it needs a non-https page.
 
 ## License / use
