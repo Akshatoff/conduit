@@ -3,8 +3,8 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { CONTENT_ITEMS } from '../../modes/accessibility/demoData'
 import { RECIPES } from '../../modes/food/demoData'
 import { MANUAL_STEPS, MACHINE_COMPONENTS } from '../../modes/industrial/demoData'
-import { clamp, SPREAD_METER_MAX, SPREAD_METER_MIN, useCircularGesture, useHorizontalSwipe, usePinchDrag, useSignatureCamera, useSignatureHands, useTwoHandPan, useTwoHandZoom, useWristRotation } from '../../modes/signature'
-import type { TwoHandZones, TwoHandZoomDirection } from '../../modes/signature'
+import { clamp, useCircularGesture, useFistRotation, useHorizontalSwipe, usePoseZoom, usePointDrag, useSignatureCamera, useSignatureHands } from '../../modes/signature'
+import type { PoseZoomState } from '../../modes/signature'
 import { HAND_CONNECTIONS } from '../../core/landmarks'
 import { readObjectCameraId, subscribeObjectCamera, writeObjectCameraId } from '../../objectCamera'
 import { backendStreamUrl } from '../../runtime'
@@ -28,26 +28,28 @@ function GestureChip({ active, children }: { active?: boolean; children: React.R
   )
 }
 
-/** Live spread dial: the marker must enter the outer bands before zoom starts, and the middle
- *  neutral band freezes it — a return to neutral cannot reverse the last zoom stroke. */
-function TwoHandMeter({ direction, spread, zones }: { direction: TwoHandZoomDirection; spread: number | null; zones: TwoHandZones }) {
-  if (spread == null) return null
-  const pct = (v: number) => `${clamp((v - SPREAD_METER_MIN) / (SPREAD_METER_MAX - SPREAD_METER_MIN), 0, 1) * 100}%`
+/** Compact pose guide: the pose name is the control, so detection is a classifier decision rather
+ *  than a threshold on how far apart two hands happen to be. */
+function PoseGuide({ zoom, rotate = false, inLabel = 'zoom in', outLabel = 'zoom out' }: { zoom: PoseZoomState; rotate?: boolean; inLabel?: string; outLabel?: string }) {
   return (
-    <div className="pointer-events-none flex items-center gap-1.5" aria-label="Two-hand spread meter" data-zoom-direction={direction}>
-      <span className="text-[8px] uppercase tracking-wider text-muted">together</span>
-      <div className="relative h-1.5 w-20 rounded-full border border-line/60 bg-bg/80">
-        <span className="absolute inset-y-0 left-0 rounded-l-full bg-warn/30" style={{ width: pct(zones.outExit) }} />
-        <span className="absolute inset-y-0 bg-line/50" style={{ left: pct(zones.outExit), width: `calc(${pct(zones.inExit)} - ${pct(zones.outExit)})` }} />
-        <span className="absolute inset-y-0 rounded-r-full bg-teal/30" style={{ left: pct(zones.inExit), right: 0 }} />
-        <span className="absolute -top-1 h-3.5 w-0.5 bg-ink" style={{ left: `calc(${pct(spread)} - 1px)` }} />
-        <span className="absolute -bottom-0.5 h-0.5 bg-warn/70" style={{ left: pct(zones.outEnter) }} />
-        <span className="absolute -bottom-0.5 h-0.5 bg-teal/70" style={{ left: pct(zones.inEnter) }} />
-      </div>
-      <span className="text-[8px] uppercase tracking-wider text-muted">apart</span>
-      <span className="w-6 font-mono text-[8px] uppercase text-ink/80">{direction === 1 ? 'in' : direction === -1 ? 'out' : 'hold'}</span>
+    <div className="pointer-events-none flex flex-wrap items-center gap-1" aria-label="Signature pose guide">
+      <GestureChip active={zoom.gesture === 'pinch'}>pinch · {inLabel}</GestureChip>
+      <GestureChip active={zoom.gesture === 'open_palm' && zoom.armedOut}>open · {outLabel}</GestureChip>
+      {rotate && <GestureChip active={zoom.gesture === 'fist'}>fist · rotate</GestureChip>}
+      <GestureChip active={zoom.gesture === 'point'}>point · pan</GestureChip>
     </div>
   )
+}
+
+function poseHint(zoom: PoseZoomState, rotate = false): string {
+  if (zoom.direction === 1) return 'PINCH · ZOOM IN'
+  if (zoom.direction === -1) return 'OPEN HAND · ZOOM OUT'
+  if (zoom.needsReset) return 'FIST OR POINT · RE-ARM ZOOM OUT'
+  if (zoom.gesture === 'pinch') return 'PINCH · HOLD TO ZOOM IN'
+  if (zoom.gesture === 'open_palm') return 'OPEN HAND · HOLD TO ZOOM OUT'
+  if (rotate && zoom.gesture === 'fist') return 'FIST · ROTATE'
+  if (zoom.gesture === 'point') return 'POINT-DRAG · PAN'
+  return ''
 }
 
 function ScreenNote({ children }: { children: React.ReactNode }) {
@@ -145,41 +147,27 @@ export function HospitalImaging({ compact = false }: { compact?: boolean }) {
   const uid = useId().replace(/:/g, '')
   const hands = useSignatureHands()
   const study = STUDIES[index % STUDIES.length]
-  const gesture = hands.twoHand ? 'TWO-HAND' : hands.primary?.gesture === 'pinch' ? 'PINCH-DRAG' : hands.primary?.gesture === 'open_palm' ? 'OPEN PALM' : null
+  const zoomPose = usePoseZoom((factor) => setZoom((z) => clamp(z * factor, 1, 3.6)), hands.ready)
+  const gesture = zoomPose.gesture ? zoomPose.gesture.replace('_', ' ').toUpperCase() : null
 
   useHorizontalSwipe(
     (dir) => {
       setIndex((i) => (i + dir + STUDIES.length) % STUDIES.length)
       setHint(dir > 0 ? 'SWIPE → NEXT IMAGE' : 'SWIPE ← PREVIOUS IMAGE')
     },
-    hands.ready && !hands.twoHand,
+    hands.ready,
   )
-  usePinchDrag(
+  usePointDrag(
     (dx, dy) => {
-      if (hands.twoHand) return
       setPan((p) => ({ x: clamp(p.x + dx * 1.5, -0.38, 0.38), y: clamp(p.y + dy * 1.5, -0.38, 0.38) }))
-      setHint('PINCH-DRAG · PAN')
+      setHint('POINT-DRAG · PAN')
     },
-    hands.ready && !hands.twoHand,
-  )
-  const twoHand = useTwoHandZoom((factor) => setZoom((z) => clamp(z * factor, 1, 3.6)), hands.ready)
-  useTwoHandPan(
-    (dx, dy) => {
-      setPan((p) => ({ x: clamp(p.x - dx * 1.6, -0.38, 0.38), y: clamp(p.y - dy * 1.6, -0.38, 0.38) }))
-      setHint('TWO-HAND TOGETHER · PAN')
-    },
-    hands.ready && twoHand.direction === 0,
+    hands.ready,
   )
   useEffect(() => {
-    if (!hands.twoHand) return
-    setHint(
-      twoHand.direction === 1
-        ? 'TWO-HAND APART · ZOOM IN'
-        : twoHand.direction === -1
-          ? 'TWO-HAND TOGETHER · ZOOM OUT'
-          : 'NEUTRAL WIDTH · ZOOM PAUSED',
-    )
-  }, [twoHand.direction, hands.twoHand])
+    const h = poseHint(zoomPose)
+    if (h) setHint(h)
+  }, [zoomPose.direction, zoomPose.gesture, zoomPose.needsReset])
 
   const reset = () => {
     setZoom(1)
@@ -202,9 +190,8 @@ export function HospitalImaging({ compact = false }: { compact?: boolean }) {
           <HospitalScan variant={study.variant} uid={uid} />
         </div>
         <div className="pointer-events-none absolute left-3 top-3 flex flex-wrap gap-1.5">
-          <GestureChip active={!!hands.twoHand}>two-hand zoom</GestureChip>
-          <GestureChip active={hands.primary?.gesture === 'pinch' && !hands.twoHand}>pinch-drag pan</GestureChip>
-          <GestureChip active={hands.primary?.gesture === 'open_palm' && !hands.twoHand}>swipe image</GestureChip>
+          <PoseGuide zoom={zoomPose} />
+          <GestureChip active={hands.primary?.gesture === 'open_palm'}>swipe image</GestureChip>
         </div>
         <div className="pointer-events-none absolute right-3 top-3 rounded-md border border-line/70 bg-bg/80 px-2 py-1 text-right font-mono text-[10px] text-ink/80 backdrop-blur">
           {study.id}<br />
@@ -221,11 +208,11 @@ export function HospitalImaging({ compact = false }: { compact?: boolean }) {
             ))}
           </div>
         </div>
-        {!hands.primary && <NoHand>Open the imaging control with the Intent Engine first, then move an open palm horizontally. Pinch-drag to pan; use both hands to spread/pinch for zoom.</NoHand>}
+        {!hands.primary && <NoHand>Open the imaging control with the Intent Engine first, then move an open palm horizontally to swipe. Point-drag to pan; pinch to zoom in; hold an open hand still to zoom out.</NoHand>}
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         <GestureChip active={!!hint}>{hint || (gesture ? `${gesture} · ACTIVE` : 'WAITING FOR HAND')}</GestureChip>
-        <span className="text-[10px] text-muted">Horizontal swipe changes image · pinch-drag pans · two-hand spread zooms</span>
+        <span className="text-[10px] text-muted">Open-palm swipe changes image · point-drag pans · pinch zooms in · open hand zooms out</span>
         <button onClick={reset} className="ml-auto rounded border border-line px-1.5 py-0.5 text-[10px] text-muted hover:text-ink">Reset view</button>
       </div>
       {!compact && <ScreenNote>View navigation only. Opening this viewer and every mode action still requires the Intent Engine; the image is fictional and not diagnostic.</ScreenNote>}
@@ -253,32 +240,18 @@ export function WaferInspector({ compact = false }: { compact?: boolean }) {
   const uid = useId().replace(/:/g, '')
   const detail = clamp((zoom - 1) / 2.4, 0, 1)
 
-  const twoHand = useTwoHandZoom((factor) => setZoom((z) => clamp(z * factor, 1, 5)), hands.ready)
-  useTwoHandPan(
+  const zoomPose = usePoseZoom((factor) => setZoom((z) => clamp(z * factor, 1, 5)), hands.ready)
+  usePointDrag(
     (dx, dy) => {
-      setPan((p) => ({ x: clamp(p.x - dx * 1.8, -0.45, 0.45), y: clamp(p.y - dy * 1.8, -0.45, 0.45) }))
-      setHint('TWO-HAND TOGETHER · PAN')
+      setPan((p) => ({ x: clamp(p.x + dx * 1.7, -0.45, 0.45), y: clamp(p.y + dy * 1.7, -0.45, 0.45) }))
+      setHint('POINT-DRAG · PAN')
     },
-    hands.ready && twoHand.direction === 0,
+    hands.ready,
   )
   useEffect(() => {
-    if (!hands.twoHand) return
-    setHint(
-      twoHand.direction === 1
-        ? 'TWO-HAND APART · ZOOM IN'
-        : twoHand.direction === -1
-          ? 'TWO-HAND TOGETHER · ZOOM OUT'
-          : 'NEUTRAL WIDTH · ZOOM PAUSED',
-    )
-  }, [twoHand.direction, hands.twoHand])
-  usePinchDrag(
-    (dx, dy) => {
-      if (hands.twoHand) return
-      setPan((p) => ({ x: clamp(p.x + dx * 1.7, -0.45, 0.45), y: clamp(p.y + dy * 1.7, -0.45, 0.45) }))
-      setHint('PINCH-DRAG · PAN')
-    },
-    hands.ready && !hands.twoHand,
-  )
+    const h = poseHint(zoomPose)
+    if (h) setHint(h)
+  }, [zoomPose.direction, zoomPose.gesture, zoomPose.needsReset])
 
   return (
     <div className={cn('relative overflow-hidden rounded-lg border border-line/70 bg-[#031112]', compact ? 'flex h-full flex-col' : '')}>
@@ -327,8 +300,7 @@ export function WaferInspector({ compact = false }: { compact?: boolean }) {
           </svg>
         </div>
         <div className="pointer-events-none absolute left-3 top-3 flex flex-wrap gap-1.5">
-          <GestureChip active={hands.twoHand}>two-hand zoom / pan</GestureChip>
-          <GestureChip active={hands.primary?.gesture === 'pinch' && !hands.twoHand}>pinch-drag pan</GestureChip>
+          <PoseGuide zoom={zoomPose} />
         </div>
         <div className="pointer-events-none absolute right-3 top-3 rounded-md border border-line/70 bg-bg/80 px-2 py-1 font-mono text-[10px] text-ink/80 backdrop-blur">
           {zoom.toFixed(1)}×<br />
@@ -336,13 +308,13 @@ export function WaferInspector({ compact = false }: { compact?: boolean }) {
         </div>
         <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-wrap items-center gap-2 bg-gradient-to-t from-black/85 to-transparent px-3 pb-2 pt-8">
           <span className="font-mono text-[9px] text-warn">FLAGGED 2 · REVIEW 3</span>
-          <span className="text-[10px] text-muted">Spread both hands to zoom in; defect labels sharpen with zoom.</span>
+          <span className="text-[10px] text-muted">Pinch to zoom in; open hand held still to zoom out. Defect labels sharpen with zoom.</span>
         </div>
-        {!hands.primary && <NoHand>Open the inspection view first. Spread both hands apart to zoom, bring them together to zoom out, or move both hands together to pan.</NoHand>}
+        {!hands.primary && <NoHand>Open the inspection view first. Pinch to zoom in, hold an open hand still to zoom out, or point-drag to pan.</NoHand>}
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        <GestureChip active={!!hint}>{hint || (hands.twoHand ? 'TWO HANDS DETECTED' : 'TWO-HAND VIEW')}</GestureChip>
-        <span className="text-[10px] text-muted">Single-hand fallback: pinch-drag to pan.</span>
+        <GestureChip active={!!hint}>{hint || 'PINCH IN · OPEN HAND OUT · POINT PAN'}</GestureChip>
+        <span className="text-[10px] text-muted">Point-drag pans; open-palm swipe changes the view.</span>
         <button onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); setHint('') }} className="ml-auto rounded border border-line px-1.5 py-0.5 text-[10px] text-muted hover:text-ink">Reset view</button>
       </div>
     </div>
@@ -368,9 +340,9 @@ export function MachineViewer({ compact = false }: { compact?: boolean }) {
   const hovered = nearest && nearest.d < 0.22 ? MACHINE_COMPONENTS.find((c) => c.id === nearest!.id) ?? null : null
   const info = MACHINE_COMPONENTS.find((c) => c.id === selected) ?? null
 
-  useWristRotation((deg) => {
+  useFistRotation((deg) => {
     setRotation((r) => clamp(r + deg, -70, 70))
-    setHint('WRIST ROTATE · MODEL')
+    setHint('FIST ROTATE · MODEL')
   }, hands.ready)
 
   useHorizontalSwipe((dir) => {
@@ -434,7 +406,7 @@ export function MachineViewer({ compact = false }: { compact?: boolean }) {
           <div className="pointer-events-none absolute size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-accent bg-accent/30" style={{ left: `${hands.primary.x * 100}%`, top: `${hands.primary.y * 100}%` }} />
         )}
         <div className="pointer-events-none absolute left-3 top-3 flex flex-wrap gap-1.5">
-          <GestureChip active={!!hands.primary && hands.primary.gesture !== 'pinch'}>wrist rotate</GestureChip>
+          <GestureChip active={hands.primary?.gesture === 'fist'}>fist rotate</GestureChip>
           <GestureChip active={hands.primary?.gesture === 'pinch'}>pinch select</GestureChip>
           <GestureChip active={!!hint}>swipe step</GestureChip>
         </div>
@@ -446,10 +418,10 @@ export function MachineViewer({ compact = false }: { compact?: boolean }) {
           <p className="text-[10px] font-medium text-ink">{current.title}</p>
           <p className="text-[9px] text-muted">Viewing only — completing a step still requires the authorised COMPLETE control.</p>
         </div>
-        {!hands.primary && <NoHand>Rotate your wrist to turn the diagram, swipe horizontally to browse repair steps, and pinch near a component to open its information.</NoHand>}
+        {!hands.primary && <NoHand>Make a fist and rotate it to turn the diagram, swipe horizontally to browse repair steps, and pinch near a component to open its information.</NoHand>}
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        <GestureChip active={!!hint}>{hint || 'WRIST · SWIPE · PINCH'}</GestureChip>
+        <GestureChip active={!!hint}>{hint || 'FIST ROTATE · SWIPE · PINCH'}</GestureChip>
         <button onClick={() => setRotation(0)} className="rounded border border-line px-1.5 py-0.5 text-[10px] text-muted hover:text-ink">Reset rotation</button>
       </div>
       {info && (
@@ -968,43 +940,30 @@ export function LiveCameraZoom() {
   const cam = useSignatureCamera()
   const [hint, setHint] = useState('')
 
-  const twoHand = useTwoHandZoom((factor) => cam.zoomBy(factor), hands.ready)
-  useTwoHandPan((dx, dy) => {
+  const zoomPose = usePoseZoom((factor) => cam.zoomBy(factor), hands.ready)
+  usePointDrag((dx, dy) => {
     cam.panBy(dx, dy)
-    setHint('TWO-HAND TOGETHER · PAN')
-  }, hands.ready && twoHand.direction === 0)
+    setHint('POINT-DRAG · PAN')
+  }, hands.ready)
   useEffect(() => {
-    if (!hands.twoHand) return
-    setHint(
-      twoHand.direction === 1
-        ? 'TWO-HAND APART · ZOOM IN'
-        : twoHand.direction === -1
-          ? 'TWO-HAND TOGETHER · ZOOM OUT'
-          : 'NEUTRAL WIDTH · ZOOM PAUSED',
-    )
-  }, [twoHand.direction, hands.twoHand])
-
-  usePinchDrag((dx, dy) => {
-    cam.panBy(dx * 0.9, dy * 0.9)
-    setHint('PINCH-DRAG · PAN')
-  }, hands.ready && !hands.twoHand)
+    const h = poseHint(zoomPose)
+    if (h) setHint(h)
+  }, [zoomPose.direction, zoomPose.gesture, zoomPose.needsReset])
 
   return (
     <div className="relative h-full">
       <div className="pointer-events-none absolute left-3 top-3 flex flex-wrap gap-1.5">
-        <GestureChip active={hands.twoHand}>two-hand zoom / pan</GestureChip>
-        <GestureChip active={hands.primary?.gesture === 'pinch' && !hands.twoHand}>pinch-drag pan</GestureChip>
+        <PoseGuide zoom={zoomPose} />
       </div>
       <LiveZoomBadge zoom={cam.zoom} />
       <div className="pointer-events-none absolute inset-x-3 bottom-3 flex flex-wrap items-center gap-2 rounded-md border border-line/50 bg-bg/75 px-2 py-1.5 backdrop-blur">
-        <GestureChip active={!!hint}>{hint || (hands.twoHand ? 'TWO HANDS DETECTED' : 'SPREAD BOTH HANDS TO ZOOM')}</GestureChip>
-        <TwoHandMeter direction={twoHand.direction} spread={twoHand.spread} zones={twoHand.zones} />
+        <GestureChip active={!!hint}>{hint || 'PINCH IN · OPEN HAND OUT · POINT PAN'}</GestureChip>
         <span className="text-[10px] text-muted">Only CAM 2 — the object camera — is zoomed and panned.</span>
         <button onClick={() => cam.zoomBy(1 / 1.3)} aria-label="Zoom camera out" className="pointer-events-auto ml-auto rounded border border-line p-1 text-muted hover:text-ink"><Minus className="size-3" /></button>
         <button onClick={() => cam.zoomBy(1.3)} aria-label="Zoom camera in" className="pointer-events-auto rounded border border-line p-1 text-muted hover:text-ink"><Plus className="size-3" /></button>
         <button onClick={cam.reset} className="pointer-events-auto inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-[10px] text-muted hover:text-ink"><RotateCcw className="size-3" /> Reset view</button>
       </div>
-      {!hands.primary && <NoHand>Hold both hands apart to zoom CAM 2 in; hold them together to zoom out; return to normal width to stop. Move both hands to pan. One-handed fallback: pinch and drag.</NoHand>}
+      {!hands.primary && <NoHand>Pinch thumb and index together to zoom CAM 2 in; hold an open hand still to zoom out; point and drag to pan. After pinching, close your fist briefly before zooming out.</NoHand>}
     </div>
   )
 }
@@ -1016,60 +975,47 @@ export function LiveCameraMachine() {
   const [viewStep, setViewStep] = useState(state?.stepIndex ?? 0)
   const [hint, setHint] = useState('')
 
-  useWristRotation((deg) => {
+  useFistRotation((deg) => {
     cam.rotateBy(deg)
-    setHint('WRIST ROTATE · LIVE CAMERA')
-  }, hands.ready && !hands.twoHand)
+    setHint('FIST ROTATE · LIVE CAMERA')
+  }, hands.ready)
 
-  const twoHand = useTwoHandZoom((factor) => cam.zoomBy(factor), hands.ready)
-  useTwoHandPan((dx, dy) => {
+  const zoomPose = usePoseZoom((factor) => cam.zoomBy(factor), hands.ready)
+  usePointDrag((dx, dy) => {
     cam.panBy(dx, dy)
-    setHint('TWO-HAND TOGETHER · PAN')
-  }, hands.ready && twoHand.direction === 0)
+    setHint('POINT-DRAG · PAN')
+  }, hands.ready)
   useEffect(() => {
-    if (!hands.twoHand) return
-    setHint(
-      twoHand.direction === 1
-        ? 'TWO-HAND APART · ZOOM IN'
-        : twoHand.direction === -1
-          ? 'TWO-HAND TOGETHER · ZOOM OUT'
-          : 'NEUTRAL WIDTH · ZOOM PAUSED',
-    )
-  }, [twoHand.direction, hands.twoHand])
-
-  usePinchDrag((dx, dy) => {
-    cam.panBy(dx * 0.9, dy * 0.9)
-    setHint('PINCH-DRAG · PAN')
-  }, hands.ready && !hands.twoHand)
+    const h = poseHint(zoomPose, true)
+    if (h) setHint(h)
+  }, [zoomPose.direction, zoomPose.gesture, zoomPose.needsReset])
 
   useHorizontalSwipe((dir) => {
     setViewStep((s) => (s + dir + MANUAL_STEPS.length) % MANUAL_STEPS.length)
     setHint(dir > 0 ? 'SWIPE → NEXT STEP' : 'SWIPE ← PREVIOUS STEP')
-  }, hands.ready && !hands.twoHand)
+  }, hands.ready)
 
   const current = MANUAL_STEPS[viewStep % MANUAL_STEPS.length]
   return (
     <div className="relative h-full">
       <div className="pointer-events-none absolute left-3 top-3 flex flex-wrap gap-1.5">
-        <GestureChip active={!!hands.primary && !hands.twoHand}>wrist rotate</GestureChip>
-        <GestureChip active={hands.twoHand}>two-hand zoom / pan</GestureChip>
-        <GestureChip active={hands.primary?.gesture === 'pinch' && !hands.twoHand}>pinch-drag pan</GestureChip>
+        <PoseGuide zoom={zoomPose} rotate />
+        <GestureChip active={hands.primary?.gesture === 'open_palm'}>swipe step</GestureChip>
       </div>
       <LiveZoomBadge zoom={cam.zoom} rotation={cam.rotation} />
       <div className="pointer-events-none absolute inset-x-3 bottom-3 rounded-md border border-line/50 bg-bg/75 px-2 py-1.5 backdrop-blur">
         <div className="flex flex-wrap items-center gap-2">
-          <GestureChip active={!!hint}>{hint || 'WRIST ROTATE · TWO-HAND ZOOM · SWIPE STEP'}</GestureChip>
-          <TwoHandMeter direction={twoHand.direction} spread={twoHand.spread} zones={twoHand.zones} />
+          <GestureChip active={!!hint}>{hint || 'PINCH IN · OPEN OUT · FIST ROTATE · POINT PAN'}</GestureChip>
           <span className="font-mono text-[10px] text-muted">{viewStep + 1}/{MANUAL_STEPS.length}</span>
           <button onClick={() => cam.zoomBy(1 / 1.3)} aria-label="Zoom camera out" className="pointer-events-auto ml-auto rounded border border-line p-1 text-muted hover:text-ink"><Minus className="size-3" /></button>
           <button onClick={() => cam.zoomBy(1.3)} aria-label="Zoom camera in" className="pointer-events-auto rounded border border-line p-1 text-muted hover:text-ink"><Plus className="size-3" /></button>
           <button onClick={cam.reset} className="pointer-events-auto inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-[10px] text-muted hover:text-ink"><RotateCcw className="size-3" /> Reset view</button>
         </div>
         <p className="mt-1 text-[11px] font-medium text-ink">{current.title}</p>
-        <p className="text-[9px] text-muted">Hold apart = zoom in · hold together = zoom out · normal width pauses zoom.</p>
+        <p className="text-[9px] text-muted">Pinch = zoom in · open hand held still = zoom out · fist = rotate · point-drag = pan.</p>
         <p className="text-[9px] text-muted">Viewing only — completing a step still requires the authorised COMPLETE control.</p>
       </div>
-      {!hands.primary && <NoHand>Rotate your wrist to turn CAM 2. Hold both hands apart to zoom in, together to zoom out, normal width to pause. Pinch-drag to pan, swipe horizontally to browse steps.</NoHand>}
+      {!hands.primary && <NoHand>Make a fist and rotate it to turn CAM 2. Pinch to zoom in, hold an open hand still to zoom out, point-drag to pan, swipe horizontally to browse steps. After pinching, close your fist briefly before zooming out.</NoHand>}
     </div>
   )
 }
@@ -1080,35 +1026,26 @@ export function CameraMagnifier() {
   const settings = useConduit((s) => s.settings)
   const [hint, setHint] = useState('')
 
-  const twoHand = useTwoHandZoom((factor) => cam.zoomBy(factor), hands.ready)
-  useTwoHandPan((dx, dy) => {
-    cam.panBy(dx, dy)
-    setHint('TWO-HAND TOGETHER · PAN')
-  }, hands.ready && twoHand.direction === 0)
-  useEffect(() => {
-    if (!hands.twoHand) return
-    setHint(
-      twoHand.direction === 1
-        ? 'TWO-HAND APART · MAGNIFY'
-        : twoHand.direction === -1
-          ? 'TWO-HAND TOGETHER · REDUCE'
-          : 'NEUTRAL WIDTH · MAGNIFY PAUSED',
-    )
-  }, [twoHand.direction, hands.twoHand])
-
-  usePinchDrag((dx, dy) => {
+  const zoomPose = usePoseZoom((factor) => cam.zoomBy(factor), hands.ready)
+  usePointDrag((dx, dy) => {
     cam.panBy(dx * 0.9, dy * 0.9)
-    setHint('PINCH-DRAG · PAN')
-  }, hands.ready && !hands.twoHand)
+    setHint('POINT-DRAG · PAN')
+  }, hands.ready)
+  useEffect(() => {
+    if (zoomPose.direction === 1) setHint('PINCH · MAGNIFY')
+    else if (zoomPose.direction === -1) setHint('OPEN HAND · REDUCE')
+    else if (zoomPose.needsReset) setHint('FIST OR POINT · RE-ARM REDUCE')
+    else if (zoomPose.gesture === 'pinch') setHint('PINCH · HOLD TO MAGNIFY')
+    else if (zoomPose.gesture === 'open_palm') setHint('OPEN HAND · HOLD TO REDUCE')
+    else if (zoomPose.gesture === 'point') setHint('POINT-DRAG · PAN')
+  }, [zoomPose.direction, zoomPose.gesture, zoomPose.needsReset])
 
   const bigBtn = 'pointer-events-auto inline-flex size-12 items-center justify-center rounded-xl border border-line bg-bg/85 text-ink shadow-lg backdrop-blur hover:border-accent/60'
   return (
     <div className="relative h-full">
       <div className="pointer-events-none absolute left-3 top-3 flex flex-wrap gap-1.5">
-        <GestureChip active={hands.twoHand}>two-hand magnify</GestureChip>
-        <GestureChip active={hands.primary?.gesture === 'pinch' && !hands.twoHand}>pinch-drag pan</GestureChip>
+        <PoseGuide zoom={zoomPose} inLabel="magnify" outLabel="reduce" />
         <GestureChip active>dwell {settings.intent.min_dwell_s.toFixed(1)}s</GestureChip>
-        <TwoHandMeter direction={twoHand.direction} spread={twoHand.spread} zones={twoHand.zones} />
       </div>
       <div className="pointer-events-none absolute right-3 top-3 rounded-lg border border-line/70 bg-bg/85 px-3 py-2 text-right backdrop-blur">
         <p className="font-mono text-2xl font-semibold text-ink">{cam.zoom.toFixed(1)}×</p>
@@ -1120,9 +1057,9 @@ export function CameraMagnifier() {
         <button className={bigBtn} aria-label="Zoom in" onClick={() => cam.zoomBy(1.3)}><Plus className="size-6" /></button>
       </div>
       <p className="pointer-events-none absolute inset-x-3 bottom-20 text-center text-[10px] text-ink/80">
-        <span className="rounded bg-bg/70 px-2 py-1 backdrop-blur">{hint || 'Spread both hands to magnify. Large buttons are an alternative to gestures.'}</span>
+        <span className="rounded bg-bg/70 px-2 py-1 backdrop-blur">{hint || 'Pinch to magnify, hold an open hand still to reduce. Large buttons are an alternative to gestures.'}</span>
       </p>
-      {!hands.primary && <NoHand>Hold both hands apart to magnify, together to reduce, normal width to pause; move both hands to pan. Large − / + buttons remain available. Magnification is view-only.</NoHand>}
+      {!hands.primary && <NoHand>Pinch to magnify, hold an open hand still to reduce, point-drag to pan. After pinching, close your fist briefly before reducing. Large − / + buttons remain available. Magnification is view-only.</NoHand>}
     </div>
   )
 }
@@ -1132,14 +1069,14 @@ export function SignatureScreen({ modeId }: { modeId: 'hospital' | 'semiconducto
   if (modeId === 'hospital') return <HospitalImaging compact />
   if (modeId === 'semiconductor') {
     return (
-      <TwoCameraView title="two-hand zoom">
+      <TwoCameraView title="pinch zoom · open hand out">
         <LiveCameraZoom />
       </TwoCameraView>
     )
   }
   if (modeId === 'industrial') {
     return (
-      <TwoCameraView title="wrist rotate · two-hand zoom">
+      <TwoCameraView title="fist rotate · pinch zoom">
         <LiveCameraMachine />
       </TwoCameraView>
     )

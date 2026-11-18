@@ -101,19 +101,19 @@ actions are authorised, per-mode interaction history and a **Reset demo** action
 
 ### Mode A — Hospital / clinical workstation
 * Fictional patients (`DEMO-0001…`), clearly labelled demo vitals and records.
-* Sample imaging panel: horizontal swipe changes the fictional image, pinch-drag pans, two-hand spread zooms.
+* Sample imaging panel: horizontal swipe changes the fictional image, point-drag pans, pinch zooms in, open hand zooms out.
 * Checklist + procedure navigation, non-clinical timer, simulated assistance request.
 * **No** real patient records, diagnosis, medical-device control or certified healthcare claim.
 
 ### Mode B — Semiconductor / cleanroom workstation
 * Five simulated stages (lithography → etch → deposition → planarisation → inspection).
-* Dashboard wafer map (deterministic). **Signature screen:** CAM 1 tracks the hands; two-hand spread/together zooms and both hands move **CAM 2**; single-hand pinch-drag fallback.
+* Dashboard wafer map (deterministic). **Signature screen:** CAM 1 tracks the hands; pinch zooms **CAM 2** in, a still open hand zooms out, point-drag pans.
 * Equipment status dashboard; LED equipment indicator, DC fan ventilation indicator, SG90 model access.
 * **No** fab/MES connection, cleanliness certification, contamination-prevention claim or process validation.
 
 ### Mode C — Industrial maintenance / field operations
 * Simulated pump readings, digital manual, inspection checklist, maintenance timer.
-* Dashboard machine diagram. **Signature screen:** wrist rotation turns **CAM 2**, two-hand spread zooms, pinch-drag pans, horizontal swipe pages repair steps; CAM 1 stays raw.
+* Dashboard machine diagram. **Signature screen:** fist rotation turns **CAM 2**, pinch zooms in, a still open hand zooms out, point-drag pans, horizontal swipe pages repair steps; CAM 1 stays raw.
 * Simulated fault report and assistance request; LED indicator and model access latch.
 * **No** machinery, PLC, interlock or safety-system connection.
 
@@ -125,7 +125,7 @@ actions are authorised, per-mode interaction history and a **Reset demo** action
 ### Mode E — Accessibility / adaptive interaction
 * Live controls for dwell time, minimum confidence, stability threshold, gesture sensitivity,
   activation/confirmation gestures and a large-control preset (zone geometry expands, same engine).
-* Dashboard adaptive panels with a hand-focus dwell preview. **Signature screen:** two-hand magnification of **CAM 2**, plus large −/+ alternative buttons; CAM 1 shows the hands.
+* Dashboard adaptive panels with a hand-focus dwell preview. **Signature screen:** pinch magnifies **CAM 2**, a still open hand reduces it, plus large −/+ alternative buttons; CAM 1 shows the hands.
 * Explicit textual feedback for every state; four large demo panels + reading view.
 * **No** claim that gesture input suits all users or disabilities; not co-designed with disabled users.
 
@@ -184,17 +184,16 @@ local databases.
    * Start camera (or pointer simulator).
    * Hold open palm → activation ring; select **OVERVIEW** (dwell + confidence), pinch → panel opens (digital ACK).
    * Select **IMAGING**, pinch → the imaging panel opens. Toggle **Signature screen**; swipe to change the
-     fictional image, pinch-drag to pan, spread both hands to zoom. Every action still requires the engine.
+     fictional image, point-drag to pan, pinch to zoom in, hold an open hand still to zoom out. Every action still requires the engine.
    * **Accident:** sweep a hand across both rails → `TRANSIT` rejection, no change; show the interaction history.
    * Start the **timer** by gesture; show the Digital Twin `hospital.timer` UI state.
 3. **Semiconductor** — switch environment (camera keeps running).
    * Advance stage, then use **Signature screen**: CAM 1 shows the tracked hands, CAM 2 the object camera.
-     Spread both hands to zoom CAM 2, bring them together, move both to pan. Choose CAM 2 in its header if
-     more than one camera is connected.
+     Pinch to zoom CAM 2 in, hold an open hand still to zoom out (fist/point reset after a pinch), point-drag to pan. Choose CAM 2 in **Settings → Camera** if more than one camera is connected.
    * Toggle **EQUIP LED** / **VENT FAN** / **ACCESS**; show the ACK → read-back lifecycle on the Twin page.
    * Optional: *Simulate link failure* and repeat → DISCONNECTED / UNKNOWN, no fake success.
 4. **Industrial** — open manual, advance step, complete checklist, raise simulated fault; show history.
-   In **Signature screen**, rotate a wrist to turn CAM 2, spread both hands to zoom, swipe to browse steps;
+   In **Signature screen**, rotate a fist to turn CAM 2, pinch to zoom in, hold an open hand still to zoom out, swipe to browse steps;
    CAM 1 remains the raw gesture view.
    **Food** — open the signature timer: circle to set duration, pinch to start/pause, swipe the lower edge.
 5. **Accessibility** — increase dwell/confidence/sensitivity live, switch confirmation gesture, toggle large
@@ -231,12 +230,11 @@ local databases.
   The selected CAM 2 device is stored per browser; camera permissions apply to both devices. If the
   Settings list contains only one camera, the browser is exposing one device — connect the other camera,
   close apps using it, and press **Refresh** (which briefly probes camera permission).
-* Two-hand signatures need both hands inside CAM 1. With one hand, the object views fall back to pinch-drag
-  pan (and accessibility offers large buttons); food remains usable one-handed. The pointer simulator
-  exposes one hand, so use a real camera to exercise two-hand zoom.
-* Zoom is a **held-zone** gesture: hold apart to zoom in, hold together to zoom out, normal width freezes.
-  The first two-hand pose calibrates that neutral width (adapting slowly while no zoom is active), so a
-  return to neutral cannot reverse the previous stroke and short tracking dropouts keep the calibration.
-  The meter in the HUD shows the marker and the active zone.
+* Signature gestures are pose-based and one-handed: **pinch** = zoom in, **still open palm** = zoom out,
+  **fist rotation** = rotate, **point-drag** = pan, **open-palm swipe** = change image/page. Food remains
+  usable one-handed; accessibility also exposes large buttons.
+* Open-palm zoom-out disarms after a pinch until the hand passes through a fist/point reset. This prevents
+  releasing a pinch from immediately reversing it; the HUD hint shows `FIST OR POINT · RE-ARM ZOOM OUT`.
+  A still open palm is required, so horizontal swipes (which move the hand) do not zoom.
 * Hospital signature images are fictional and deterministic. Other signature screens show the operator's
   own camera feeds and load no wafer metrology, machine telemetry or kitchen data.

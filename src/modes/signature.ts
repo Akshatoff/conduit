@@ -4,23 +4,18 @@
 // create commands: a control must already have been authorised by the Intent Engine before a
 // signature screen can be opened/used, and discrete mode actions still require dwell + confirmation.
 //
-// The Intent Engine keeps consuming only the primary hand. Two-hand data is optional and is used
-// solely to drive these screens.
+// The Intent Engine keeps consuming only the primary hand. Signature screens use that same primary
+// hand's pose (pinch / open palm / fist / point); a second hand is not required.
 
 import { useEffect, useRef, useState } from 'react'
-import type { SecondHand, VisionFrame } from '../core/types'
+import type { VisionFrame } from '../core/types'
 import { useConduit } from '../store'
 
 export const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
-export const dist2 = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y)
 
 export interface SignatureHands {
   frame: VisionFrame | null
   primary: { x: number; y: number; gesture: string; orientation: number } | null
-  second: SecondHand | null
-  twoHand: boolean
-  spread: number | null
-  center: { x: number; y: number } | null
   /** Signature gestures pause while the engine is selecting/confirming/executing a control. */
   ready: boolean
 }
@@ -34,15 +29,13 @@ export function useSignatureHands(): SignatureHands {
     frame?.hand_detected && frame.position
       ? { x: frame.position.x, y: frame.position.y, gesture: frame.gesture, orientation: frame.features?.orientation_deg ?? 0 }
       : null
-  const second = frame?.second_hand && frame.second_hand.hand_detected ? frame.second_hand : null
-  const twoHand = !!primary && !!second
-  const spread = primary && second ? dist2(primary, second.position) : null
-  const center = primary && second ? { x: (primary.x + second.position.x) / 2, y: (primary.y + second.position.y) / 2 } : null
   // Hovering a workspace control must not silently pause the signature view: nothing here can
   // activate that control, and the Intent Engine still owns every mode action. Only an in-flight
   // selection/confirmation/execution pauses navigation gestures.
-  const ready = !!primary && !BLOCKING.has(intent.state)
-  return { frame, primary, second, twoHand, spread, center, ready }
+  // Low-confidence / unstable frames are ignored so a flickering classifier cannot toggle a pose.
+  const confident = !!frame && (frame.tracking_quality ?? 1) >= 0.25
+  const ready = !!primary && confident && !BLOCKING.has(intent.state)
+  return { frame, primary, ready }
 }
 
 /** Horizontal open-palm swipes. Runs outside engine target selection so it cannot fire a command. */
@@ -84,14 +77,150 @@ export function useHorizontalSwipe(onSwipe: (dir: 1 | -1) => void, enabled: bool
   }, [x, t, eligible, threshold, cooldownMs])
 }
 
-/** Pinch-and-drag deltas in normalised stage coordinates. */
-export function usePinchDrag(onDelta: (dx: number, dy: number) => void, enabled: boolean) {
+// Pose-based zoom. The gesture *pose* selects the action, not the distance between two hands:
+// pinch (thumb + index) zooms in, an open palm zooms out. Open-palm zoom-out is disarmed after a
+// pinch until the hand passes through a fist/point reset, so releasing a pinch cannot undo it.
+// Open-palm zoom only starts once the hand is held still, leaving horizontal open-palm swipes free.
+export const POSE_ZOOM_SPEED = 0.95
+export const POSE_HOLD_S = 0.12
+export const OPEN_HOLD_S = 0.22
+export const OPEN_REARM_S = 0.12
+
+export type PoseZoomDirection = 1 | -1 | 0
+
+export interface PoseZoomState {
+  direction: PoseZoomDirection
+  gesture: string | null
+  /** Open-palm zoom-out is available (false right after a pinch, until a fist/point reset). */
+  armedOut: boolean
+  /** Open palm is showing but zoom-out needs a fist/point reset first. */
+  needsReset: boolean
+}
+
+/**
+ * Pose-gated zoom. Pinch held = zoom in; open palm held still = zoom out.
+ * Both are rate-based, so the user controls the amount by how long the pose is held.
+ */
+export function usePoseZoom(
+  onZoom: (factor: number) => void,
+  enabled: boolean,
+  maxSpeed = POSE_ZOOM_SPEED,
+): PoseZoomState {
+  const hands = useSignatureHands()
+  const cb = useRef(onZoom)
+  cb.current = onZoom
+  const state = useRef({
+    direction: 0 as PoseZoomDirection,
+    pinchSince: 0,
+    openSince: 0,
+    neutralSince: 0,
+    lastT: 0,
+    lastPos: null as { x: number; y: number } | null,
+    armedOut: true,
+  })
+  const [direction, setDirection] = useState<PoseZoomDirection>(0)
+  const [armedOut, setArmedOut] = useState(true)
+  const primary = hands.primary
+  const now = hands.frame?.timestamp ?? 0
+
+  useEffect(() => {
+    const st = state.current
+    if (!primary || !hands.frame) {
+      st.direction = 0
+      st.pinchSince = 0
+      st.openSince = 0
+      st.neutralSince = 0
+      st.lastT = 0
+      st.lastPos = null
+      st.armedOut = true
+      setDirection(0)
+      setArmedOut(true)
+      return
+    }
+    if (!enabled) {
+      // A brief low-confidence or engine-busy frame must not cancel a pose the user is holding.
+      // Short gaps keep the timers; a longer gap starts the pose cleanly.
+      if (st.lastT && now - st.lastT > 0.4) {
+        st.pinchSince = 0
+        st.openSince = 0
+        st.neutralSince = 0
+      }
+      st.direction = 0
+      setDirection(0)
+      return
+    }
+
+    const dt = st.lastT ? clamp(now - st.lastT, 0, 0.12) : 0.016
+    st.lastT = now
+    const moved = st.lastPos ? Math.hypot(primary.x - st.lastPos.x, primary.y - st.lastPos.y) : 0
+    st.lastPos = { x: primary.x, y: primary.y }
+
+    let next: PoseZoomDirection = 0
+
+    if (primary.gesture === 'pinch') {
+      st.openSince = 0
+      st.neutralSince = 0
+      if (!st.pinchSince) st.pinchSince = now
+      if (now - st.pinchSince >= POSE_HOLD_S) {
+        cb.current(Math.exp(maxSpeed * dt))
+        next = 1
+        if (st.armedOut) {
+          st.armedOut = false
+          setArmedOut(false)
+        }
+      }
+    } else if (primary.gesture === 'open_palm') {
+      st.pinchSince = 0
+      st.neutralSince = 0
+      if (!st.armedOut) {
+        // Releasing a pinch must not immediately reverse it. The hand has to pass through a
+        // fist/point reset below before open-palm zoom-out arms again.
+        st.openSince = 0
+      } else {
+        if (moved > 0.012) st.openSince = 0
+        else if (!st.openSince) st.openSince = now
+        if (st.openSince && now - st.openSince >= OPEN_HOLD_S) {
+          cb.current(Math.exp(-maxSpeed * dt))
+          next = -1
+        }
+      }
+    } else {
+      st.pinchSince = 0
+      st.openSince = 0
+      if (!st.armedOut && (primary.gesture === 'fist' || primary.gesture === 'point')) {
+        if (!st.neutralSince) st.neutralSince = now
+        if (now - st.neutralSince >= OPEN_REARM_S) {
+          st.armedOut = true
+          st.neutralSince = 0
+          setArmedOut(true)
+        }
+      } else if (st.armedOut) {
+        st.neutralSince = 0
+      }
+    }
+
+    if (st.direction !== next) {
+      st.direction = next
+      setDirection(next)
+    }
+  }, [enabled, primary?.gesture, primary?.x, primary?.y, now, hands.frame, maxSpeed])
+
+  return {
+    direction,
+    gesture: primary?.gesture ?? null,
+    armedOut,
+    needsReset: !armedOut && primary?.gesture === 'open_palm',
+  }
+}
+
+/** Index-finger drag in normalised stage coordinates, used for panning. */
+export function usePointDrag(onDelta: (dx: number, dy: number) => void, enabled: boolean) {
   const hands = useSignatureHands()
   const last = useRef<{ x: number; y: number } | null>(null)
   const cb = useRef(onDelta)
   cb.current = onDelta
   const p = hands.primary
-  const active = enabled && hands.ready && p?.gesture === 'pinch'
+  const active = enabled && hands.ready && p?.gesture === 'point'
 
   useEffect(() => {
     if (!active || !p) {
@@ -101,171 +230,19 @@ export function usePinchDrag(onDelta: (dx: number, dy: number) => void, enabled:
     if (last.current) {
       const dx = p.x - last.current.x
       const dy = p.y - last.current.y
-      if (Math.abs(dx) + Math.abs(dy) > 0.0005) cb.current(dx, dy)
+      if (Math.abs(dx) + Math.abs(dy) > 0.0008) cb.current(clamp(dx, -0.04, 0.04), clamp(dy, -0.04, 0.04))
     }
     last.current = { x: p.x, y: p.y }
   }, [active, p?.x, p?.y])
 }
 
-// Two-hand zoom uses *held zones*, not frame-to-frame deltas. Once a zoom stroke starts it keeps
-// going until both hands return to the neutral width, where it stops. Re-opening the hands to
-// neutral therefore cannot undo a zoom-out (the old delta mapping treated that return as zoom-in).
-//
-// Zones are relative to the width the user naturally holds when two hands appear, because camera
-// distance/framing changes the absolute distance a lot. A neutral band around that baseline means
-// returning to rest always freezes the transform instead of starting the opposite gesture.
-export const SPREAD_METER_MIN = 0.08
-export const SPREAD_METER_MAX = 0.7
-
-export type TwoHandZoomDirection = 1 | -1 | 0
-
-export interface TwoHandZones {
-  neutral: number
-  outEnter: number
-  outExit: number
-  inExit: number
-  inEnter: number
-}
-
-export function twoHandZones(neutral: number): TwoHandZones {
-  const n = clamp(neutral, 0.2, 0.58)
-  return {
-    neutral: n,
-    outEnter: Math.min(n * 0.55, 0.2),
-    outExit: Math.min(n * 0.78, 0.27),
-    inExit: Math.max(n * 1.12, 0.34),
-    inEnter: Math.max(n * 1.35, 0.42),
-  }
-}
-
-/**
- * Held two-hand zoom. `onZoom` receives a per-frame multiplier plus the active direction.
- * Hysteresis keeps jitter from flipping direction; the neutral band freezes the transform.
- */
-export function useTwoHandZoom(
-  onZoom: (factor: number, direction: 1 | -1) => void,
-  enabled: boolean,
-  maxSpeed = 0.85,
-): { direction: TwoHandZoomDirection; spread: number | null; zones: TwoHandZones } {
-  const hands = useSignatureHands()
-  const cb = useRef(onZoom)
-  cb.current = onZoom
-  const state = useRef({
-    direction: 0 as TwoHandZoomDirection,
-    smoothed: null as number | null,
-    neutral: null as number | null,
-    lastT: 0,
-    lastSeen: 0,
-  })
-  const [direction, setDirection] = useState<TwoHandZoomDirection>(0)
-  const spread = hands.spread
-  const now = hands.frame?.timestamp ?? 0
-
-  useEffect(() => {
-    const st = state.current
-    if (!enabled || !hands.frame) {
-      st.direction = 0
-      st.smoothed = null
-      st.neutral = null
-      st.lastT = 0
-      st.lastSeen = 0
-      setDirection(0)
-      return
-    }
-
-    if (!hands.twoHand || spread == null) {
-      // One hand briefly lost mid-stroke: freeze and keep the calibrated neutral width. Only a
-      // longer absence (or leaving the screen) forces a fresh baseline.
-      st.direction = 0
-      st.lastT = 0
-      setDirection(0)
-      if (st.lastSeen && now - st.lastSeen > 0.3) {
-        st.smoothed = null
-        st.neutral = null
-        st.lastSeen = 0
-      }
-      return
-    }
-    st.lastSeen = now
-
-    if (st.neutral == null) {
-      // Capture the resting two-hand width, then require a deliberate spread/pinch beyond it.
-      st.neutral = clamp(spread, 0.2, 0.58)
-      st.smoothed = spread
-      st.lastT = now
-      setDirection(0)
-      return
-    }
-
-    st.smoothed = st.smoothed == null ? spread : st.smoothed + (spread - st.smoothed) * 0.45
-    const v = st.smoothed
-    // While no stroke is active, drift the baseline toward a held resting width. This keeps the
-    // thresholds right if the first two-hand frame was caught mid-raise, without letting a fast
-    // spread escape its own trigger.
-    if (st.direction === 0) {
-      const rest = twoHandZones(st.neutral)
-      if (v >= rest.outExit && v <= rest.inExit) st.neutral += (v - st.neutral) * 0.03
-    }
-    const z = twoHandZones(st.neutral)
-
-    let next = st.direction
-    if (next === 1 && v < z.inExit) next = 0
-    else if (next === -1 && v > z.outExit) next = 0
-    else if (next === 0) {
-      if (v > z.inEnter) next = 1
-      else if (v < z.outEnter) next = -1
-    }
-
-    const dt = st.lastT ? clamp(now - st.lastT, 0, 0.12) : 0.016
-    st.lastT = now
-    st.direction = next
-    setDirection(next)
-
-    if (next !== 0 && dt > 0) {
-      const rate =
-        next === 1
-          ? clamp((v - z.inExit) / (SPREAD_METER_MAX - z.inExit), 0.2, 1)
-          : clamp((z.outExit - v) / (z.outExit - SPREAD_METER_MIN), 0.2, 1)
-      cb.current(Math.exp(next * rate * maxSpeed * dt), next)
-    }
-  }, [enabled, hands.twoHand, spread, now, hands.frame, maxSpeed])
-
-  return { direction, spread, zones: twoHandZones(state.current.neutral ?? 0.35) }
-}
-
-/** Common centre movement of two open hands, used for panning only while zoom is paused. */
-export function useTwoHandPan(
-  onDelta: (dx: number, dy: number) => void,
-  enabled: boolean,
-) {
-  const hands = useSignatureHands()
-  const last = useRef<{ x: number; y: number } | null>(null)
-  const cb = useRef(onDelta)
-  cb.current = onDelta
-  const active = enabled && hands.twoHand && !!hands.center
-
-  useEffect(() => {
-    if (!active || !hands.center) {
-      last.current = null
-      return
-    }
-    if (last.current) {
-      const dx = hands.center.x - last.current.x
-      const dy = hands.center.y - last.current.y
-      // Ignore sub-pixel wobble so a held pose does not drift the view.
-      if (Math.abs(dx) + Math.abs(dy) > 0.0012) cb.current(clamp(dx, -0.03, 0.03), clamp(dy, -0.03, 0.03))
-    }
-    last.current = { x: hands.center.x, y: hands.center.y }
-  }, [active, hands.center?.x, hands.center?.y])
-}
-
-/** Wrist rotation deltas in degrees, unwrapped so crossing ±180° does not jump. */
-export function useWristRotation(onDelta: (deg: number) => void, enabled: boolean) {
+/** Fist rotation deltas in degrees, unwrapped so crossing ±180° does not jump. */
+export function useFistRotation(onDelta: (deg: number) => void, enabled: boolean) {
   const hands = useSignatureHands()
   const last = useRef<number | null>(null)
   const cb = useRef(onDelta)
   cb.current = onDelta
-  const active = enabled && hands.ready && !!hands.primary && hands.primary.gesture !== 'pinch' && hands.primary.gesture !== 'fist'
+  const active = enabled && hands.ready && hands.primary?.gesture === 'fist'
   const angle = hands.primary?.orientation ?? null
 
   useEffect(() => {

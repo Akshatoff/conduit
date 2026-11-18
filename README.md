@@ -58,19 +58,24 @@ a fictional image viewer. Every other environment shows **two cameras**:
 If only one webcam is available, CAM 2 falls back to the gesture stream and says so. The signature screen
 is navigation only and can never command a device or bypass the Intent Engine.
 
-Two-hand zoom is **held**, not delta-based: hold both hands apart to zoom in, hold them together to zoom
-out, and return to your normal width to freeze the view. The first two-hand pose sets the neutral width
-(so camera distance does not change the thresholds), a short hand-tracking dropout does not re-calibrate,
-and returning to neutral can never start the opposite zoom. The spread meter beside the hint shows the
-current zone.
+Signature interaction is **pose-based**, so the classifier decides what to do instead of a threshold on
+hand distance:
+
+- **Pinch** (thumb + index together) → zoom in. Hold the pinch to keep zooming.
+- **Open palm, held still** → zoom out. After a pinch, briefly close a fist first so releasing the pinch
+  cannot undo it; the hint says `FIST OR POINT · RE-ARM ZOOM OUT`.
+- **Fist, rotated** → rotate the object camera.
+- **Point + drag** → pan.
+- **Open-palm swipe** → change image / page steps (movement is reserved for the swipe, so a still open
+  hand is needed for zoom-out).
 
 | Environment | Problem it demonstrates | Signature interaction | Hardware |
 |---|---|---|---|
-| **Hospital / clinical** | Accessing information while hands are occupied, without repeatedly touching a shared screen | Fictional patient overview / records; horizontal swipe changes image, pinch-drag pans, two-hand spread zooms the sample viewer; checklist, timer, assistance request | shared LED |
-| **Semiconductor / cleanroom** | Following process instructions and inspection data with gloved hands | 5-stage simulated wafer flow; **Signature screen: CAM 1 tracks hands, CAM 2 zooms/pans the object camera** with two hands (pinch-drag fallback); defect categories, wafer dashboard, records, equipment | LED status, ventilation fan, servo model access |
-| **Industrial maintenance** | Reading procedures and recording findings while holding tools | Equipment readings, digital manual, inspection checklist, maintenance timer, fault report + assistance; **Signature screen rotates/zooms the CAM 2 object camera** with wrist/two-hand gestures and pages repair steps by swipe | LED indicator, servo service latch |
+| **Hospital / clinical** | Accessing information while hands are occupied, without repeatedly touching a shared screen | Fictional patient overview / records; pinch zooms in, open hand zooms out, point-drag pans, open-palm swipe changes image; checklist, timer, assistance request | shared LED |
+| **Semiconductor / cleanroom** | Following process instructions and inspection data with gloved hands | 5-stage simulated wafer flow; **Signature screen: CAM 1 tracks hands, CAM 2 zooms/pans the object camera** with pinch/open-hand and point-drag; defect categories, wafer dashboard, records, equipment | LED status, ventilation fan, servo model access |
+| **Industrial maintenance** | Reading procedures and recording findings while holding tools | Equipment readings, digital manual, inspection checklist, maintenance timer, fault report + assistance; **Signature screen rotates/zooms the CAM 2 object camera** with fist rotation, pinch/open-hand zoom, point-drag pan and swipe paging | LED indicator, servo service latch |
 | **Food processing** | Following recipes and timers without touching a shared screen | Three fictional recipes, ingredient quantities, preparation steps, cooking timer, QC checklist, order board; **Signature screen shows CAM 1 + CAM 2** while a circular hand motion sets the timer, pinch starts/pauses and lower-edge swipe pages steps | shared LED |
-| **Accessibility / adaptive** | A single fixed input method excludes people | Live dwell / confidence / stability / **gesture sensitivity** / confirmation-gesture configuration, large-control preset; **Signature screen magnifies CAM 2** with two hands or large −/+ buttons | shared LED |
+| **Accessibility / adaptive** | A single fixed input method excludes people | Live dwell / confidence / stability / **gesture sensitivity** / confirmation-gesture configuration, large-control preset; **Signature screen magnifies CAM 2** with pinch/open-hand or large −/+ buttons | shared LED |
 
 Every environment includes a guided demonstration script (auto-advancing as authorised actions occur),
 a **Reset demo** action, per-environment interaction history and explicit safety/scope statements.
@@ -164,7 +169,7 @@ The full staged sequence is in [`docs/MODES.md`](docs/MODES.md#recommended-judge
    **ACCESS**; show the mode indicators on the Twin page (`node` vs `ui`).
 6. **Signature screens:** open **Signature screen** in each environment. Hospital swipes fictional images.
    Everywhere else you get CAM 1 (gesture tracking with landmarks) and CAM 2 (the object camera), each
-   labelled. Point CAM 2 at the object and perform the gesture — two-hand zoom/pan, wrist rotation, large
+   labelled. Point CAM 2 at the object and perform the gesture — pinch zoom, open-hand zoom-out, fist rotation, point-drag pan, large
    magnifier buttons — while CAM 1 stays raw. Food keeps both cameras visible and sets the timer by circling.
    Point out the gesture chips and that the view never issues a command.
 7. **Industrial / Food:** briefly show one workflow each (manual → step → checklist → simulated fault; or
