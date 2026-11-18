@@ -31,7 +31,9 @@ function rgba(hex: string, a: number) {
 
 function draw(ctx: CanvasRenderingContext2D, W: number, H: number, time: number) {
   const s = useConduit.getState()
-  const { intent, zones, frame, trail, devices, interactionMode } = s
+  const { intent, frame, trail, devices, interactionMode } = s
+  // A signature screen drives the live image; hide the control rails there so the feed is clean.
+  const zones = s.signatureView.active ? [] : s.zones
   ctx.clearRect(0, 0, W, H)
   const baseline = interactionMode === 'baseline'
   const stateHex = HEX[STATE_TONE[intent.state]]
@@ -278,6 +280,8 @@ export function CameraStage({ fill = false, className }: { fill?: boolean; class
   const frame = useConduit((s) => s.frame)
   const intent = useConduit((s) => s.intent)
   const mode = useConduit((s) => s.interactionMode)
+  const signatureView = useConduit((s) => s.signatureView)
+  const signatureActive = signatureView.active
   const running = camera.state === 'running'
 
   // the browser runtime owns one persistent <video>; mount it into this stage while visible
@@ -345,16 +349,29 @@ export function CameraStage({ fill = false, className }: { fill?: boolean; class
         onPointerDown={pointerMode ? (e) => { (e.target as Element).setPointerCapture?.(e.pointerId); rt().setPointerPinch(true) } : undefined}
         onPointerUp={pointerMode ? () => rt().setPointerPinch(false) : undefined}
       >
-        {/* video layers */}
-        {runtimeKind === 'browser' && inputSource === 'camera' && <div ref={hostRef} className={cn('absolute inset-0', !running && 'opacity-0')} />}
+        {/* video + landmark canvas are transformed together so signatures manipulate the live image */}
         {pointerMode && <div className="grid-bg absolute inset-0" />}
-        {showBackendVideo && <img key={camera.state + String(camera.camera_index)} src={backendStreamUrl()} alt="Live camera feed (processed locally)" className="absolute inset-0 h-full w-full object-fill" />}
         {runtimeKind === 'backend' && running && !previewOn && <div className="grid-bg absolute inset-0" />}
-
-        <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
+        <div
+          className="absolute inset-0"
+          style={
+            signatureActive
+              ? {
+                  transform: `translate(${signatureView.x * 100}%, ${signatureView.y * 100}%) scale(${signatureView.zoom}) rotate(${signatureView.rotation}deg)`,
+                  transformOrigin: '50% 50%',
+                  transition: 'transform 90ms linear',
+                  willChange: 'transform',
+                }
+              : undefined
+          }
+        >
+          {runtimeKind === 'browser' && inputSource === 'camera' && <div ref={hostRef} className={cn('absolute inset-0', !running && 'opacity-0')} />}
+          {showBackendVideo && <img key={camera.state + String(camera.camera_index)} src={backendStreamUrl()} alt="Live camera feed (processed locally)" className="absolute inset-0 h-full w-full object-fill" />}
+          <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
+        </div>
 
         {/* top-left status */}
-        <div className="pointer-events-none absolute left-3 top-3 flex flex-wrap items-center gap-2">
+        {!signatureActive && <div className="pointer-events-none absolute left-3 top-3 flex flex-wrap items-center gap-2">
           {camera.active ? (
             <Pill tone="danger" icon={<span className="block size-2 rounded-full bg-danger" />} pulse className="bg-bg/80 backdrop-blur">
               CAMERA ACTIVE · LOCAL PROCESSING
@@ -369,10 +386,10 @@ export function CameraStage({ fill = false, className }: { fill?: boolean; class
             </Pill>
           )}
           {mode === 'baseline' && <Pill tone="warn" className="bg-bg/80 backdrop-blur">BASELINE MODE · NO INTENT CHECKS</Pill>}
-        </div>
+        </div>}
 
         {/* top-right telemetry */}
-        {running && (
+        {running && !signatureActive && (
           <div className="pointer-events-none absolute right-3 top-3 flex items-center gap-2">
             <Pill tone="neutral" icon={<Hand className="size-3" />} className="bg-bg/80 backdrop-blur">
               {frame?.hand_detected ? `${GESTURE_LABEL[frame.gesture] ?? frame.gesture}${frame.handedness ? ` · ${frame.handedness}` : ''}` : 'No hand'}
@@ -383,7 +400,7 @@ export function CameraStage({ fill = false, className }: { fill?: boolean; class
         )}
 
         {/* bottom intent bar: what the system currently believes */}
-        {running && (
+        {running && !signatureActive && (
           <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-bg/95 via-bg/70 to-transparent px-4 pb-3 pt-10">
             <div className="flex flex-wrap items-center gap-2">
               <Pill tone={stateTone}>{STATE_LABEL[intent.state]}</Pill>

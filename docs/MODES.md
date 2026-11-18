@@ -61,11 +61,13 @@ no `action` behave exactly as before (all original tests still pass).
 ### View-only signature interactions
 
 Each environment adds a **Signature screen** on top of the unchanged pipeline. It consumes the primary
-hand plus an optional second hand, and drives *view state only* (image selection, pan/zoom, diagram
-rotation, step browsing, timer duration, focus preview). It never emits a command and is paused while
-the Intent Engine is selecting, confirming or executing. A small chip names the active gesture. The
-Python worker and browser runtime now request up to two hands; the Intent Engine still consumes only
-the first (primary) hand.
+hand plus an optional second hand and drives *view state only*: hospital selects fictional images, while
+semiconductor, industrial and accessibility apply zoom, pan, rotation or magnification to the **live
+camera feed itself**. Food keeps the live camera visible with a timer HUD. The transform is applied to
+the video and landmark canvas together, so the hand overlay stays aligned with the zoomed image. A small
+chip names the active gesture. It never emits a command and is paused while the Intent Engine is
+selecting, confirming or executing. The Python worker and browser runtime request up to two hands; the
+Intent Engine still consumes only the first (primary) hand.
 
 ### Digital controls are not physical execution
 
@@ -102,13 +104,13 @@ actions are authorised, per-mode interaction history and a **Reset demo** action
 
 ### Mode B — Semiconductor / cleanroom workstation
 * Five simulated stages (lithography → etch → deposition → planarisation → inspection).
-* Fictional wafer map (deterministic): two-hand spread/together zooms, both hands moving together pans, defect callouts sharpen with zoom; single-hand pinch-drag fallback.
+* Dashboard wafer map (deterministic). **Signature screen:** two-hand spread/together zooms and both hands move the **live camera**; single-hand pinch-drag fallback.
 * Equipment status dashboard; LED equipment indicator, DC fan ventilation indicator, SG90 model access.
 * **No** fab/MES connection, cleanliness certification, contamination-prevention claim or process validation.
 
 ### Mode C — Industrial maintenance / field operations
 * Simulated pump readings, digital manual, inspection checklist, maintenance timer.
-* Interactive machine diagram: wrist rotation turns it, horizontal swipe pages repair steps, pinch near a component opens fictional information.
+* Dashboard machine diagram. **Signature screen:** wrist rotation turns the **live camera**, two-hand spread zooms, pinch-drag pans, horizontal swipe pages repair steps.
 * Simulated fault report and assistance request; LED indicator and model access latch.
 * **No** machinery, PLC, interlock or safety-system connection.
 
@@ -120,7 +122,7 @@ actions are authorised, per-mode interaction history and a **Reset demo** action
 ### Mode E — Accessibility / adaptive interaction
 * Live controls for dwell time, minimum confidence, stability threshold, gesture sensitivity,
   activation/confirmation gestures and a large-control preset (zone geometry expands, same engine).
-* Large adaptive panels with a hand-focus dwell preview (duration follows the configured dwell) and reading view.
+* Dashboard adaptive panels with a hand-focus dwell preview. **Signature screen:** two-hand magnification of the **live camera**, plus large −/+ alternative buttons.
 * Explicit textual feedback for every state; four large demo panels + reading view.
 * **No** claim that gesture input suits all users or disabilities; not co-designed with disabled users.
 
@@ -183,16 +185,17 @@ local databases.
    * **Accident:** sweep a hand across both rails → `TRANSIT` rejection, no change; show the interaction history.
    * Start the **timer** by gesture; show the Digital Twin `hospital.timer` UI state.
 3. **Semiconductor** — switch environment (camera keeps running).
-   * Advance stage, open wafer inspection, then use **Signature screen**: spread both hands to zoom the wafer
-     map (defect labels sharpen), bring them together, move both to pan.
+   * Advance stage, then use **Signature screen**: spread both hands to zoom the **live camera**, bring them
+     together, move both to pan. The wafer dashboard remains available behind Details.
    * Toggle **EQUIP LED** / **VENT FAN** / **ACCESS**; show the ACK → read-back lifecycle on the Twin page.
    * Optional: *Simulate link failure* and repeat → DISCONNECTED / UNKNOWN, no fake success.
 4. **Industrial** — open manual, advance step, complete checklist, raise simulated fault; show history.
-   In **Signature screen**, rotate a wrist to turn the diagram, swipe to browse steps, pinch a component.
+   In **Signature screen**, rotate a wrist to turn the live camera, spread both hands to zoom, swipe to browse
+   steps.
    **Food** — open the signature timer: circle to set duration, pinch to start/pause, swipe the lower edge.
 5. **Accessibility** — increase dwell/confidence/sensitivity live, switch confirmation gesture, toggle large
-   controls; show the same engine becoming stricter/looser without a camera restart. The signature screen's
-   adaptive panels preview hand focus with the configured dwell — selection still needs confirmation.
+   controls; show the same engine becoming stricter/looser without a camera restart. The signature screen
+   magnifies the live camera with two hands or large buttons — it is a view, not a selection.
 6. **Analytics** — show that the empty state is empty, run a trial per environment if time permits,
    export CSV with the `workspace` column. Explain that results are recorded, not fabricated.
 7. **Reset demo** in any environment restores the dashboard and history.
@@ -219,8 +222,8 @@ local databases.
   may need the Accessibility large-control preset or Settings threshold tuning.
 * Analytics comparison across environments is only meaningful with the same operator, scenarios and ≥ 20 trials each.
 * Real-camera behaviour must be rehearsed and tuned as described in the main README.
-* Two-hand signatures need both hands inside the camera frame; with one hand, hospital/semiconductor fall back
-  to pinch-drag pan, while industrial and food remain usable one-handed. The pointer simulator exposes one
-  hand, so use a real camera to exercise two-hand zoom.
-* Signature screens are deterministic, fictional demonstrations; they do not load medical images, wafer
-  metrology, machine telemetry or kitchen data.
+* Two-hand signatures need both hands inside the camera frame. With one hand, live-camera views fall back to
+  pinch-drag pan (and accessibility offers large buttons); food remains usable one-handed. The pointer
+  simulator exposes one hand, so use a real camera to exercise two-hand zoom.
+* Hospital signature images are fictional and deterministic. Other signature screens show the operator's
+  own camera feed and load no wafer metrology, machine telemetry or kitchen data.

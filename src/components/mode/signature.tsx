@@ -1,9 +1,9 @@
-import { ChevronLeft, ChevronRight, Hand, Layers, Maximize2, Minimize2, ScanLine, Sparkles, TimerReset, Wrench } from 'lucide-react'
+import { Camera, ChevronLeft, ChevronRight, Hand, Layers, Maximize2, Minimize2, Minus, Plus, RotateCcw, ScanLine, Sparkles, TimerReset, Wrench } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
 import { CONTENT_ITEMS } from '../../modes/accessibility/demoData'
 import { RECIPES } from '../../modes/food/demoData'
 import { MANUAL_STEPS, MACHINE_COMPONENTS } from '../../modes/industrial/demoData'
-import { clamp, useCircularGesture, useHorizontalSwipe, usePinchDrag, useSignatureHands, useTwoHandTransform, useWristRotation } from '../../modes/signature'
+import { clamp, projectSignaturePoint, useCircularGesture, useHorizontalSwipe, usePinchDrag, useSignatureCamera, useSignatureHands, useTwoHandTransform, useWristRotation } from '../../modes/signature'
 import { useConduit } from '../../store'
 import { useModeState } from './DashboardKit'
 import { Pill } from '../ui'
@@ -30,17 +30,17 @@ function ScreenNote({ children }: { children: React.ReactNode }) {
 
 function NoHand({ children }: { children: React.ReactNode }) {
   return (
-    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 rounded-lg bg-bg/70 px-5 text-center backdrop-blur-[1px]">
-      <Hand className="size-6 text-muted/70" />
-      <p className="text-xs font-medium text-ink">Show one hand to drive this screen</p>
-      <p className="max-w-sm text-[10px] leading-relaxed text-muted">{children}</p>
+    <div className="pointer-events-none absolute inset-x-3 bottom-24 z-20 mx-auto flex max-w-md flex-col items-center gap-1 rounded-lg border border-line/60 bg-bg/85 px-4 py-3 text-center shadow-lg backdrop-blur">
+      <Hand className="size-5 text-muted/70" />
+      <p className="text-xs font-medium text-ink">Show a hand to drive this screen</p>
+      <p className="text-[10px] leading-relaxed text-muted">{children}</p>
     </div>
   )
 }
 
 function ScreenHeader({ icon, title, right }: { icon: React.ReactNode; title: string; right?: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-2 border-b border-line/60 pb-2">
+    <div className="flex items-center gap-2 rounded-md border border-line/50 bg-bg/75 px-2 py-1.5 backdrop-blur">
       <span className="text-accent">{icon}</span>
       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink">{title}</p>
       <div className="ml-auto flex items-center gap-1.5">{right}</div>
@@ -430,7 +430,7 @@ export function MachineViewer({ compact = false }: { compact?: boolean }) {
 }
 
 // ------------------------------------------------------------------ FOOD
-export function PrepTimer({ compact = false }: { compact?: boolean }) {
+export function PrepTimer({ compact = false, live = false }: { compact?: boolean; live?: boolean }) {
   const state = useModeState()
   const [duration, setDuration] = useState(180)
   const [remaining, setRemaining] = useState(180)
@@ -497,11 +497,11 @@ export function PrepTimer({ compact = false }: { compact?: boolean }) {
   const circ = 2 * Math.PI * 78
 
   return (
-    <div className={cn('relative overflow-hidden rounded-lg border border-line/70 bg-bg/50 p-3', compact ? 'flex h-full flex-col' : '')}>
+    <div className={cn('relative overflow-hidden rounded-lg border border-line/70 p-3', live ? 'border-0 bg-transparent' : 'bg-bg/50', compact || live ? 'flex h-full flex-col' : '')}>
       <ScreenHeader icon={<TimerReset className="size-3.5" />} title="Preparation timer · gesture" right={<Pill tone="warn">simulated</Pill>} />
       <div className="mt-2 flex flex-1 flex-col items-center justify-center gap-2">
         <div className="relative">
-          <svg viewBox="0 0 200 200" className="size-48 sm:size-56" role="img" aria-label={`Simulated preparation timer ${fmt(remaining)}`}>
+          <svg viewBox="0 0 200 200" className={cn(live ? 'size-40' : 'size-48 sm:size-56')} role="img" aria-label={`Simulated preparation timer ${fmt(remaining)}`}>
             <circle cx="100" cy="100" r="78" fill="none" stroke="#1c2a42" strokeWidth="10" />
             <circle
               cx="100" cy="100" r="78" fill="none" stroke={running ? '#42d6c5' : '#ef8f6b'} strokeWidth="10" strokeLinecap="round"
@@ -648,26 +648,186 @@ export function AdaptivePanels({ compact = false }: { compact?: boolean }) {
   )
 }
 
+// ------------------------------------------------------------------ LIVE CAMERA SIGNATURES
+// Semiconductor / industrial / accessibility manipulate the real webcam image. The transform is
+// applied by CameraStage to the video and landmark canvas together; these components are HUDs only.
+
+function LiveZoomBadge({ zoom, rotation }: { zoom: number; rotation?: number }) {
+  return (
+    <div className="pointer-events-none absolute right-3 top-14 rounded-md border border-line/70 bg-bg/80 px-2 py-1 text-right font-mono text-[10px] text-ink/80 backdrop-blur">
+      {zoom.toFixed(1)}×
+      {rotation !== undefined && <><br /><span className="text-muted">{rotation.toFixed(0)}°</span></>}
+    </div>
+  )
+}
+
+export function LiveCameraZoom() {
+  const hands = useSignatureHands()
+  const cam = useSignatureCamera()
+  const [hint, setHint] = useState('')
+
+  useTwoHandTransform((d) => {
+    if (Math.abs(d.spread) > (Math.abs(d.x) + Math.abs(d.y)) * 1.15) {
+      cam.zoomBy(1 + d.spread * 3.4)
+      setHint(d.spread > 0 ? 'TWO-HAND SPREAD · ZOOM IN' : 'TWO-HAND PINCH · ZOOM OUT')
+    } else {
+      cam.panBy(d.x, d.y)
+      setHint('TWO-HAND TOGETHER · PAN')
+    }
+  }, hands.ready)
+
+  usePinchDrag((dx, dy) => {
+    cam.panBy(dx * 0.9, dy * 0.9)
+    setHint('PINCH-DRAG · PAN')
+  }, hands.ready && !hands.twoHand)
+
+  return (
+    <div className="relative h-full">
+      <ScreenHeader icon={<Camera className="size-3.5" />} title="Live camera · two-hand zoom" right={<Pill tone="warn">real time</Pill>} />
+      <div className="pointer-events-none absolute left-3 top-14 flex flex-wrap gap-1.5">
+        <GestureChip active={hands.twoHand}>two-hand zoom / pan</GestureChip>
+        <GestureChip active={hands.primary?.gesture === 'pinch' && !hands.twoHand}>pinch-drag pan</GestureChip>
+      </div>
+      <LiveZoomBadge zoom={cam.zoom} />
+      <div className="pointer-events-none absolute inset-x-3 bottom-3 flex flex-wrap items-center gap-2 rounded-md border border-line/50 bg-bg/75 px-2 py-1.5 backdrop-blur">
+        <GestureChip active={!!hint}>{hint || (hands.twoHand ? 'TWO HANDS DETECTED' : 'SPREAD BOTH HANDS TO ZOOM')}</GestureChip>
+        <span className="text-[10px] text-muted">The live camera image itself is zoomed and panned.</span>
+        <button onClick={() => cam.zoomBy(1 / 1.3)} aria-label="Zoom camera out" className="pointer-events-auto ml-auto rounded border border-line p-1 text-muted hover:text-ink"><Minus className="size-3" /></button>
+        <button onClick={() => cam.zoomBy(1.3)} aria-label="Zoom camera in" className="pointer-events-auto rounded border border-line p-1 text-muted hover:text-ink"><Plus className="size-3" /></button>
+        <button onClick={cam.reset} className="pointer-events-auto inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-[10px] text-muted hover:text-ink"><RotateCcw className="size-3" /> Reset view</button>
+      </div>
+      {!hands.primary && <NoHand>Spread both hands apart to zoom the live camera in, bring them together to zoom out, or move both hands to pan. One-handed fallback: pinch and drag.</NoHand>}
+    </div>
+  )
+}
+
+export function LiveCameraMachine() {
+  const state = useModeState()
+  const hands = useSignatureHands()
+  const cam = useSignatureCamera()
+  const [viewStep, setViewStep] = useState(state?.stepIndex ?? 0)
+  const [hint, setHint] = useState('')
+
+  useWristRotation((deg) => {
+    cam.rotateBy(deg)
+    setHint('WRIST ROTATE · LIVE CAMERA')
+  }, hands.ready && !hands.twoHand)
+
+  useTwoHandTransform((d) => {
+    if (Math.abs(d.spread) > (Math.abs(d.x) + Math.abs(d.y)) * 1.15) {
+      cam.zoomBy(1 + d.spread * 3.4)
+      setHint(d.spread > 0 ? 'TWO-HAND SPREAD · ZOOM IN' : 'TWO-HAND PINCH · ZOOM OUT')
+    } else {
+      cam.panBy(d.x, d.y)
+      setHint('TWO-HAND TOGETHER · PAN')
+    }
+  }, hands.ready)
+
+  usePinchDrag((dx, dy) => {
+    cam.panBy(dx * 0.9, dy * 0.9)
+    setHint('PINCH-DRAG · PAN')
+  }, hands.ready && !hands.twoHand)
+
+  useHorizontalSwipe((dir) => {
+    setViewStep((s) => (s + dir + MANUAL_STEPS.length) % MANUAL_STEPS.length)
+    setHint(dir > 0 ? 'SWIPE → NEXT STEP' : 'SWIPE ← PREVIOUS STEP')
+  }, hands.ready && !hands.twoHand)
+
+  const current = MANUAL_STEPS[viewStep % MANUAL_STEPS.length]
+  return (
+    <div className="relative h-full">
+      <ScreenHeader icon={<Wrench className="size-3.5" />} title="Live camera · rotate & zoom" right={<Pill tone="warn">real time</Pill>} />
+      <div className="pointer-events-none absolute left-3 top-14 flex flex-wrap gap-1.5">
+        <GestureChip active={!!hands.primary && !hands.twoHand}>wrist rotate</GestureChip>
+        <GestureChip active={hands.twoHand}>two-hand zoom / pan</GestureChip>
+        <GestureChip active={hands.primary?.gesture === 'pinch' && !hands.twoHand}>pinch-drag pan</GestureChip>
+      </div>
+      <LiveZoomBadge zoom={cam.zoom} rotation={cam.rotation} />
+      <div className="pointer-events-none absolute inset-x-3 bottom-3 rounded-md border border-line/50 bg-bg/75 px-2 py-1.5 backdrop-blur">
+        <div className="flex flex-wrap items-center gap-2">
+          <GestureChip active={!!hint}>{hint || 'WRIST ROTATE · TWO-HAND ZOOM · SWIPE STEP'}</GestureChip>
+          <span className="font-mono text-[10px] text-muted">{viewStep + 1}/{MANUAL_STEPS.length}</span>
+          <button onClick={() => cam.zoomBy(1 / 1.3)} aria-label="Zoom camera out" className="pointer-events-auto ml-auto rounded border border-line p-1 text-muted hover:text-ink"><Minus className="size-3" /></button>
+          <button onClick={() => cam.zoomBy(1.3)} aria-label="Zoom camera in" className="pointer-events-auto rounded border border-line p-1 text-muted hover:text-ink"><Plus className="size-3" /></button>
+          <button onClick={cam.reset} className="pointer-events-auto inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-[10px] text-muted hover:text-ink"><RotateCcw className="size-3" /> Reset view</button>
+        </div>
+        <p className="mt-1 text-[11px] font-medium text-ink">{current.title}</p>
+        <p className="text-[9px] text-muted">Viewing only — completing a step still requires the authorised COMPLETE control.</p>
+      </div>
+      {!hands.primary && <NoHand>Rotate your wrist to turn the live camera, spread both hands to zoom, pinch-drag to pan, and swipe horizontally to browse repair steps.</NoHand>}
+    </div>
+  )
+}
+
+export function CameraMagnifier() {
+  const hands = useSignatureHands()
+  const cam = useSignatureCamera(4)
+  const settings = useConduit((s) => s.settings)
+  const [hint, setHint] = useState('')
+
+  useTwoHandTransform((d) => {
+    if (Math.abs(d.spread) > (Math.abs(d.x) + Math.abs(d.y)) * 1.15) {
+      cam.zoomBy(1 + d.spread * 3)
+      setHint(d.spread > 0 ? 'TWO-HAND SPREAD · MAGNIFY' : 'TWO-HAND PINCH · REDUCE')
+    } else {
+      cam.panBy(d.x, d.y)
+      setHint('TWO-HAND TOGETHER · PAN')
+    }
+  }, hands.ready)
+
+  usePinchDrag((dx, dy) => {
+    cam.panBy(dx * 0.9, dy * 0.9)
+    setHint('PINCH-DRAG · PAN')
+  }, hands.ready && !hands.twoHand)
+
+  const bigBtn = 'pointer-events-auto inline-flex size-12 items-center justify-center rounded-xl border border-line bg-bg/85 text-ink shadow-lg backdrop-blur hover:border-accent/60'
+  return (
+    <div className="relative h-full">
+      <ScreenHeader icon={<Camera className="size-3.5" />} title="Live camera · adaptive magnification" right={<Pill tone="teal">large targets</Pill>} />
+      <div className="pointer-events-none absolute left-3 top-14 flex flex-wrap gap-1.5">
+        <GestureChip active={hands.twoHand}>two-hand magnify</GestureChip>
+        <GestureChip active={hands.primary?.gesture === 'pinch' && !hands.twoHand}>pinch-drag pan</GestureChip>
+        <GestureChip active>dwell {settings.intent.min_dwell_s.toFixed(1)}s</GestureChip>
+      </div>
+      <div className="pointer-events-none absolute right-3 top-14 rounded-lg border border-line/70 bg-bg/85 px-3 py-2 text-right backdrop-blur">
+        <p className="font-mono text-2xl font-semibold text-ink">{cam.zoom.toFixed(1)}×</p>
+        <p className="text-[9px] uppercase tracking-wider text-muted">live magnification</p>
+      </div>
+      <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-2">
+        <button className={bigBtn} aria-label="Zoom out" onClick={() => cam.zoomBy(1 / 1.3)}><Minus className="size-6" /></button>
+        <button className="pointer-events-auto inline-flex h-12 items-center justify-center rounded-xl border border-line bg-bg/85 px-4 text-xs font-medium text-ink shadow-lg backdrop-blur hover:border-accent/60" onClick={cam.reset}>1× · reset</button>
+        <button className={bigBtn} aria-label="Zoom in" onClick={() => cam.zoomBy(1.3)}><Plus className="size-6" /></button>
+      </div>
+      <p className="pointer-events-none absolute inset-x-3 bottom-20 text-center text-[10px] text-ink/80">
+        <span className="rounded bg-bg/70 px-2 py-1 backdrop-blur">{hint || 'Spread both hands to magnify. Large buttons are an alternative to gestures.'}</span>
+      </p>
+      {!hands.primary && <NoHand>Spread both hands apart over the camera to magnify, move both hands to pan, or use the large − / + buttons. Magnification is view-only.</NoHand>}
+    </div>
+  )
+}
+
 // ------------------------------------------------------------------ dispatcher
 export function SignatureScreen({ modeId }: { modeId: 'hospital' | 'semiconductor' | 'industrial' | 'food_processing' | 'accessibility' }) {
   const hands = useSignatureHands()
+  const view = useConduit((s) => s.signatureView)
   const content =
     modeId === 'hospital' ? <HospitalImaging compact /> :
-    modeId === 'semiconductor' ? <WaferInspector compact /> :
-    modeId === 'industrial' ? <MachineViewer compact /> :
-    modeId === 'food_processing' ? <PrepTimer compact /> :
-    <AdaptivePanels compact />
+    modeId === 'semiconductor' ? <LiveCameraZoom /> :
+    modeId === 'industrial' ? <LiveCameraMachine /> :
+    modeId === 'food_processing' ? <PrepTimer compact live /> :
+    <CameraMagnifier />
+  const cursor = hands.primary ? projectSignaturePoint(hands.primary, view) : null
   return (
     <div className="relative h-full">
       {content}
-      {hands.primary && (
+      {cursor && (
         <div
           className="pointer-events-none absolute z-30 -translate-x-1/2 -translate-y-1/2"
-          style={{ left: `${hands.primary.x * 100}%`, top: `${hands.primary.y * 100}%` }}
+          style={{ left: `${cursor.x * 100}%`, top: `${cursor.y * 100}%` }}
         >
           <div className="size-5 rounded-full border-2 border-accent bg-accent/20 shadow-[0_0_18px_rgba(66,214,197,0.5)]" />
           <span className="absolute left-7 top-0 whitespace-nowrap rounded bg-bg/85 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wider text-accent">
-            {hands.primary.gesture}
+            {hands.primary!.gesture}
           </span>
         </div>
       )}

@@ -30,7 +30,7 @@ import { SemiconductorDashboard } from '../modes/semiconductor/Dashboard'
 import { elapsedMs, fmtClock } from '../modes/state'
 import type { ModeDefinition, ModeState } from '../modes/types'
 import { rt } from '../runtime'
-import { useConduit } from '../store'
+import { resetSignatureView, useConduit } from '../store'
 import { cn } from '../utils/cn'
 
 type DetailTab = 'dashboard' | 'controls' | 'history' | 'guide'
@@ -179,6 +179,17 @@ export function WorkspacePage() {
   const [screen, setScreen] = useState(false)
   const detailsRef = useRef<HTMLDivElement>(null)
 
+  // The signature screens transform the live camera itself. Reset when the screen closes or the
+  // environment changes so the next mode always starts from the untouched feed.
+  useEffect(() => {
+    if (!screen) {
+      resetSignatureView()
+      return
+    }
+    useConduit.setState((s) => ({ signatureView: { ...s.signatureView, active: true } }))
+    return () => resetSignatureView()
+  }, [screen, mode?.id])
+
   const openDetail = (tab: DetailTab) => {
     setDetail(tab)
     window.setTimeout(() => detailsRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }), 0)
@@ -229,8 +240,14 @@ export function WorkspacePage() {
                 className="h-[62dvh] min-h-[360px] rounded-none border-0 sm:h-[68dvh] xl:h-[calc(100dvh-13rem)] xl:min-h-[500px]"
               />
               {screen && (
-                <div className="pointer-events-none absolute inset-0 z-20 flex flex-col bg-bg/90 p-3 backdrop-blur-sm">
-                  <div className="flex items-center gap-2 border-b border-line/60 pb-2">
+                <div
+                  className={cn(
+                    'pointer-events-none absolute inset-0 z-20 flex flex-col p-3',
+                    mode.id === 'hospital' ? 'bg-bg/95 backdrop-blur-sm' : 'bg-transparent',
+                  )}
+                  data-signature-live={mode.id === 'hospital' ? undefined : true}
+                >
+                  <div className="flex items-center gap-2 rounded-md border-b border-line/60 bg-bg/70 px-2 py-1.5 backdrop-blur">
                     <ScanLine className="size-4 text-accent" />
                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink">Signature screen</p>
                     <Pill tone="teal">{mode.shortName}</Pill>
@@ -246,7 +263,7 @@ export function WorkspacePage() {
                   <div className="min-h-0 w-full flex-1 pt-2 [&_button]:pointer-events-auto [&_select]:pointer-events-auto">
                     <SignatureScreen modeId={mode.id} />
                   </div>
-                  <p className="w-full border-t border-line/60 pt-2 text-[9px] leading-snug text-muted">
+                  <p className="w-full rounded border-t border-line/60 bg-bg/70 px-2 py-1 text-[9px] leading-snug text-muted backdrop-blur">
                     View navigation only. Commands still pass through the Intent Engine; this overlay never bypasses confirmation.
                   </p>
                 </div>

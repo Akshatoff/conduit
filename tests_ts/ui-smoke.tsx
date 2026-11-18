@@ -42,6 +42,7 @@ async function main() {
   await act(async () => sleep(800))
   check('browser runtime selected when backend absent', S().runtimeKind === 'browser')
   const text = () => document.body.textContent ?? ''
+  const liveText = () => document.querySelector('[data-signature-live]')?.textContent ?? ''
   check('environment selection renders first', S().page === 'modes' && /Choose your environment/.test(text()) && /Hospital/.test(text()) && /Semiconductor/.test(text()))
   check('all five environments are offered', (text().match(/Enter mode/g) ?? []).length === 5)
 
@@ -211,6 +212,7 @@ async function main() {
 
   await gotoMode('hospital')
   check('signature screen opens from the camera workspace', await openSignature())
+  check('signature mode marks the camera view as transformed', S().signatureView.active === true, JSON.stringify(S().signatureView))
   await push(frameAt(0.5, 0.45))
   check('hospital signature view is visible', /Imaging · gesture view/.test(text()))
   const logBefore = S().log.length
@@ -227,24 +229,27 @@ async function main() {
 
   await gotoMode('semiconductor')
   await openSignature()
-  await push(frameAt(0.4, 0.45,
-    'open_palm', 0, secondAt(0.6, 0.45)))
+  await push(frameAt(0.4, 0.45, 'open_palm', 0, secondAt(0.6, 0.45)))
   await push(frameAt(0.3, 0.45, 'open_palm', 0, secondAt(0.75, 0.45)))
-  check('semiconductor two-hand spread raises wafer detail', /TWO-HAND SPREAD · ZOOM IN/.test(text()) && /% detail/.test(text()), text().slice(0, 260))
+  check('semiconductor two-hand spread zooms the live camera', /TWO-HAND SPREAD · ZOOM IN/.test(liveText()) && /The live camera image itself is zoomed/.test(liveText()), liveText().slice(0, 300))
+  const feed = document.querySelector('[data-camera-fill="true"] div[style*="scale("]') as HTMLElement | null
+  const scale = Number(/(?:^|\s)scale\(([\d.]+)\)/.exec(feed?.style.transform ?? '')?.[1] ?? '1')
+  check('camera video layer carries the gesture transform', !!feed && scale > 1, feed?.style.transform)
   await push(frameAt(0.3, 0.45, 'pinch'))
   await push(frameAt(0.42, 0.55, 'pinch'))
-  check('semiconductor single-hand pinch fallback pans', /PINCH-DRAG · PAN/.test(text()))
+  check('semiconductor single-hand pinch fallback pans', /PINCH-DRAG · PAN/.test(liveText()), liveText().slice(0, 240))
 
   await gotoMode('industrial')
   await openSignature()
   await push(frameAt(0.5, 0.5, 'open_palm', 0))
   await push(frameAt(0.5, 0.5, 'open_palm', 28))
-  check('wrist rotation turns the industrial model', /WRIST ROTATE · MODEL/.test(text()) && /2[0-9]°/.test(text()), text().slice(0, 260))
+  check('wrist rotation turns the live camera', /WRIST ROTATE · LIVE CAMERA/.test(liveText()) && /Live camera · rotate & zoom/.test(liveText()), liveText().slice(0, 320))
   await push(frameAt(0.3, 0.6))
   for (let i = 1; i <= 6; i++) await push(frameAt(0.3 + i * 0.09, 0.6))
-  check('horizontal swipe pages the repair steps', /view step 2\/5/.test(text()), text().slice(0, 300))
-  await push(frameAt(0.27, 0.65, 'pinch'))
-  check('pinch on a component opens its information', /Drive motor/.test(text()) && /simulated component/.test(text()), text().slice(0, 360))
+  check('horizontal swipe pages the repair steps', /2\/5/.test(liveText()) && /SWIPE → NEXT STEP/.test(liveText()), liveText().slice(0, 320))
+  await push(frameAt(0.5, 0.5, 'pinch'))
+  await push(frameAt(0.62, 0.56, 'pinch'))
+  check('pinch-drag pans the live camera', /PINCH-DRAG · PAN/.test(liveText()), liveText().slice(0, 320))
 
   await gotoMode('food_processing')
   await openSignature()
@@ -261,12 +266,14 @@ async function main() {
   await gotoMode('accessibility')
   await openSignature()
   await push(frameAt(0.3, 0.35))
-  check('accessibility signature screen shows the adaptive panel grid', /hand focus/.test(text()) && /SELECT \/ READ still need/.test(text()), text().slice(0, 320))
-  await push(frameAt(0.32, 0.36))
-  check('adaptive panel focus is preview only', /Preview only/.test(text()))
+  check('accessibility signature screen magnifies the live camera', /Live camera · adaptive magnification/.test(liveText()) && /live magnification/.test(liveText()), liveText().slice(0, 320))
+  await push(frameAt(0.3, 0.35, 'open_palm', 0, secondAt(0.6, 0.35)))
+  await push(frameAt(0.28, 0.35, 'open_palm', 0, secondAt(0.75, 0.35)))
+  check('adaptive two-hand magnify keeps large alternatives visible', /TWO-HAND SPREAD · MAGNIFY/.test(liveText()) && /1× · reset/.test(liveText()) && /large targets/.test(liveText()), liveText().slice(0, 360))
 
   await closeSignature()
   check('signature screen closes without disturbing the workspace', !/Signature screen/.test(document.querySelector('button[aria-pressed="true"]')?.textContent ?? '') && !!document.querySelector('[data-camera-fill="true"]'))
+  check('closing signature resets the live camera transform', S().signatureView.active === false && S().signatureView.zoom === 1 && !document.querySelector('[data-camera-fill="true"] div[style*="scale("]'), JSON.stringify(S().signatureView))
   console.log(failed ? `\n${failed} UI smoke check(s) FAILED` : '\nAll UI smoke checks passed')
   process.exit(failed ? 1 : 0)
 }
