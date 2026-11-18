@@ -1,9 +1,12 @@
-import { ChevronLeft, ChevronRight, Hand, Layers, Maximize2, Minimize2, ScanLine, Sparkles, TimerReset, Wrench } from 'lucide-react'
+import { Camera, ChevronLeft, ChevronRight, Hand, Layers, Maximize2, Minimize2, Minus, Plus, RotateCcw, ScanLine, Sparkles, TimerReset, Wrench } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
 import { CONTENT_ITEMS } from '../../modes/accessibility/demoData'
 import { RECIPES } from '../../modes/food/demoData'
 import { MANUAL_STEPS, MACHINE_COMPONENTS } from '../../modes/industrial/demoData'
-import { clamp, useCircularGesture, useHorizontalSwipe, usePinchDrag, useSignatureHands, useTwoHandTransform, useWristRotation } from '../../modes/signature'
+import { clamp, useCircularGesture, useHorizontalSwipe, usePinchDrag, useSignatureCamera, useSignatureHands, useTwoHandTransform, useWristRotation } from '../../modes/signature'
+import { HAND_CONNECTIONS } from '../../core/landmarks'
+import { readObjectCameraId, subscribeObjectCamera, writeObjectCameraId } from '../../objectCamera'
+import { backendStreamUrl } from '../../runtime'
 import { useConduit } from '../../store'
 import { useModeState } from './DashboardKit'
 import { Pill } from '../ui'
@@ -30,17 +33,17 @@ function ScreenNote({ children }: { children: React.ReactNode }) {
 
 function NoHand({ children }: { children: React.ReactNode }) {
   return (
-    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 rounded-lg bg-bg/70 px-5 text-center backdrop-blur-[1px]">
-      <Hand className="size-6 text-muted/70" />
-      <p className="text-xs font-medium text-ink">Show one hand to drive this screen</p>
-      <p className="max-w-sm text-[10px] leading-relaxed text-muted">{children}</p>
+    <div className="pointer-events-none absolute inset-x-3 bottom-24 z-20 mx-auto flex max-w-md flex-col items-center gap-1 rounded-lg border border-line/60 bg-bg/85 px-4 py-3 text-center shadow-lg backdrop-blur">
+      <Hand className="size-5 text-muted/70" />
+      <p className="text-xs font-medium text-ink">Show a hand to drive this screen</p>
+      <p className="text-[10px] leading-relaxed text-muted">{children}</p>
     </div>
   )
 }
 
 function ScreenHeader({ icon, title, right }: { icon: React.ReactNode; title: string; right?: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-2 border-b border-line/60 pb-2">
+    <div className="flex items-center gap-2 rounded-md border border-line/50 bg-bg/75 px-2 py-1.5 backdrop-blur">
       <span className="text-accent">{icon}</span>
       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink">{title}</p>
       <div className="ml-auto flex items-center gap-1.5">{right}</div>
@@ -430,7 +433,7 @@ export function MachineViewer({ compact = false }: { compact?: boolean }) {
 }
 
 // ------------------------------------------------------------------ FOOD
-export function PrepTimer({ compact = false }: { compact?: boolean }) {
+export function PrepTimer({ compact = false, live = false, hideHeader = false }: { compact?: boolean; live?: boolean; hideHeader?: boolean }) {
   const state = useModeState()
   const [duration, setDuration] = useState(180)
   const [remaining, setRemaining] = useState(180)
@@ -497,11 +500,11 @@ export function PrepTimer({ compact = false }: { compact?: boolean }) {
   const circ = 2 * Math.PI * 78
 
   return (
-    <div className={cn('relative overflow-hidden rounded-lg border border-line/70 bg-bg/50 p-3', compact ? 'flex h-full flex-col' : '')}>
-      <ScreenHeader icon={<TimerReset className="size-3.5" />} title="Preparation timer · gesture" right={<Pill tone="warn">simulated</Pill>} />
+    <div className={cn('relative overflow-hidden rounded-lg border border-line/70 p-3', live ? 'border-0 bg-transparent' : 'bg-bg/50', compact || live ? 'flex h-full flex-col' : '')}>
+      {!hideHeader && <ScreenHeader icon={<TimerReset className="size-3.5" />} title="Preparation timer · gesture" right={<Pill tone="warn">simulated</Pill>} />}
       <div className="mt-2 flex flex-1 flex-col items-center justify-center gap-2">
         <div className="relative">
-          <svg viewBox="0 0 200 200" className="size-48 sm:size-56" role="img" aria-label={`Simulated preparation timer ${fmt(remaining)}`}>
+          <svg viewBox="0 0 200 200" className={cn(live ? 'size-40' : 'size-48 sm:size-56')} role="img" aria-label={`Simulated preparation timer ${fmt(remaining)}`}>
             <circle cx="100" cy="100" r="78" fill="none" stroke="#1c2a42" strokeWidth="10" />
             <circle
               cx="100" cy="100" r="78" fill="none" stroke={running ? '#42d6c5' : '#ef8f6b'} strokeWidth="10" strokeLinecap="round"
@@ -648,29 +651,452 @@ export function AdaptivePanels({ compact = false }: { compact?: boolean }) {
   )
 }
 
-// ------------------------------------------------------------------ dispatcher
-export function SignatureScreen({ modeId }: { modeId: 'hospital' | 'semiconductor' | 'industrial' | 'food_processing' | 'accessibility' }) {
-  const hands = useSignatureHands()
-  const content =
-    modeId === 'hospital' ? <HospitalImaging compact /> :
-    modeId === 'semiconductor' ? <WaferInspector compact /> :
-    modeId === 'industrial' ? <MachineViewer compact /> :
-    modeId === 'food_processing' ? <PrepTimer compact /> :
-    <AdaptivePanels compact />
+// ------------------------------------------------------------------ two-camera signature layout
+// CAM 1 is the gesture camera: the same stream MediaPipe is tracking, drawn with landmarks.
+// CAM 2 is a separate physical camera pointed at the object; only this image is zoomed/panned/rotated.
+
+type ObjectCameraStatus = 'starting' | 'live' | 'fallback' | 'error'
+function useObjectCamera() {
+  const gestureStream = useConduit((s) => s.stream)
+  const [devices, setDevices] = useState<{ id: string; label: string }[]>([])
+  const [selected, setSelected] = useState(readObjectCameraId)
+  const [stream, setStream] = useState<MediaStream | null>(null)
+  const [status, setStatus] = useState<ObjectCameraStatus>('starting')
+  const [error, setError] = useState('')
+  const gestureId = gestureStream?.getVideoTracks()[0]?.getSettings().deviceId ?? null
+
+  useEffect(() => subscribeObjectCamera(setSelected), [])
+
+  useEffect(() => {
+    if (selected) writeObjectCameraId(selected)
+  }, [selected])
+
+  useEffect(() => {
+    if (!navigator.mediaDevices?.enumerateDevices) {
+      setStatus('error')
+      setError('Camera enumeration is unavailable in this browser.')
+      return
+    }
+    let cancelled = false
+    navigator.mediaDevices
+      .enumerateDevices()
+      .then((all) => {
+        if (cancelled) return
+        const cams = all.filter((d) => d.kind === 'videoinput').map((d) => ({ id: d.deviceId, label: d.label || 'Camera' }))
+        setDevices(cams)
+        if (cams.length === 0) {
+          setStatus('error')
+          setError('No camera devices were found.')
+        }
+        setSelected((current) => {
+          if (current && cams.some((c) => c.id === current)) return current
+          return cams.find((c) => c.id !== gestureId)?.id ?? cams[0]?.id ?? ''
+        })
+      })
+      .catch((e) => {
+        if (cancelled) return
+        setStatus('error')
+        setError(e instanceof Error ? e.message : String(e))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [gestureStream, gestureId])
+
+  useEffect(() => {
+    if (!selected) return
+    let cancelled = false
+    let own: MediaStream | null = null
+    setStatus('starting')
+    setError('')
+    const run = async () => {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        if (gestureStream) {
+          setStream(gestureStream)
+          setStatus('fallback')
+          setError('This browser cannot open a separate object camera.')
+        } else {
+          setStatus('error')
+          setError('This browser cannot open a second camera.')
+        }
+        return
+      }
+      try {
+        const ms = await navigator.mediaDevices.getUserMedia({
+          video: selected ? { deviceId: { exact: selected }, width: { ideal: 1280 }, height: { ideal: 720 } } : true,
+          audio: false,
+        })
+        if (cancelled) {
+          ms.getTracks().forEach((t) => t.stop())
+          return
+        }
+        own = ms
+        setStream(ms)
+        setStatus(gestureId && selected === gestureId ? 'fallback' : 'live')
+      } catch (e) {
+        if (cancelled) return
+        const msg = e instanceof Error ? e.message : String(e)
+        // A laptop with one webcam cannot open the same device twice. Mirror the gesture stream
+        // instead of leaving a black panel, and say so plainly.
+        if (gestureStream) {
+          setStream(gestureStream)
+          setStatus('fallback')
+          setError(msg)
+        } else {
+          setStream(null)
+          setStatus('error')
+          setError(msg)
+        }
+      }
+    }
+    void run()
+    return () => {
+      cancelled = true
+      own?.getTracks().forEach((t) => t.stop())
+    }
+  }, [selected, gestureStream])
+
+  return { stream, devices, selected, status, error, gestureId }
+}
+
+function LandmarkOverlay() {
+  const frame = useConduit((s) => s.frame)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    const W = Math.max(1, rect.width)
+    const H = Math.max(1, rect.height)
+    const dpr = window.devicePixelRatio || 1
+    canvas.width = Math.round(W * dpr)
+    canvas.height = Math.round(H * dpr)
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.clearRect(0, 0, W, H)
+    const hands: number[][][] = []
+    if (frame?.features?.landmarks?.length === 21) hands.push(frame.features.landmarks)
+    const second = frame?.second_hand?.features?.landmarks
+    if (second?.length === 21) hands.push(second)
+    hands.forEach((lm, i) => {
+      ctx.strokeStyle = i === 1 ? 'rgba(177,140,255,0.6)' : 'rgba(66,214,197,0.72)'
+      ctx.lineWidth = 2
+      for (const [a, b] of HAND_CONNECTIONS) {
+        ctx.beginPath()
+        ctx.moveTo(lm[a][0] * W, lm[a][1] * H)
+        ctx.lineTo(lm[b][0] * W, lm[b][1] * H)
+        ctx.stroke()
+      }
+      lm.forEach((p, idx) => {
+        const tip = [4, 8, 12, 16, 20].includes(idx)
+        ctx.beginPath()
+        ctx.arc(p[0] * W, p[1] * H, tip ? 3.5 : 2.4, 0, Math.PI * 2)
+        ctx.fillStyle = tip ? '#42d6c5' : 'rgba(234,241,250,0.85)'
+        ctx.fill()
+      })
+    })
+  }, [frame])
+
+  return <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full" />
+}
+
+function GestureFeed() {
+  const stream = useConduit((s) => s.stream)
+  const runtimeKind = useConduit((s) => s.runtimeKind)
+  const camera = useConduit((s) => s.camera)
+  const frame = useConduit((s) => s.frame)
+  const previewOn = useConduit((s) => s.settings?.privacy.preview_stream ?? true)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const running = camera.state === 'running'
+
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v) return
+    v.srcObject = stream
+    if (stream) void v.play().catch(() => undefined)
+    return () => {
+      v.srcObject = null
+    }
+  }, [stream])
+
   return (
-    <div className="relative h-full">
-      {content}
-      {hands.primary && (
+    <section className="relative min-h-0 overflow-hidden rounded-lg border border-line/60 bg-black">
+      {runtimeKind === 'browser' && stream && (
+        <video ref={videoRef} muted playsInline autoPlay className="absolute inset-0 h-full w-full -scale-x-100 object-fill" />
+      )}
+      {runtimeKind === 'browser' && !stream && <div className="grid-bg absolute inset-0" />}
+      {runtimeKind === 'backend' && running && previewOn && (
+        <img src={backendStreamUrl()} alt="Gesture camera preview" className="absolute inset-0 h-full w-full object-fill" />
+      )}
+      {runtimeKind === 'backend' && running && !previewOn && <div className="grid-bg absolute inset-0" />}
+      <LandmarkOverlay />
+      {frame?.hand_detected && frame.position && (
         <div
-          className="pointer-events-none absolute z-30 -translate-x-1/2 -translate-y-1/2"
-          style={{ left: `${hands.primary.x * 100}%`, top: `${hands.primary.y * 100}%` }}
-        >
-          <div className="size-5 rounded-full border-2 border-accent bg-accent/20 shadow-[0_0_18px_rgba(66,214,197,0.5)]" />
-          <span className="absolute left-7 top-0 whitespace-nowrap rounded bg-bg/85 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wider text-accent">
-            {hands.primary.gesture}
-          </span>
+          className="pointer-events-none absolute z-10 size-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-accent bg-accent/20"
+          style={{ left: `${frame.position.x * 100}%`, top: `${frame.position.y * 100}%` }}
+        />
+      )}
+      <div className="absolute inset-x-0 top-0 z-20 flex flex-wrap items-center gap-2 bg-bg/85 px-2 py-1.5 backdrop-blur">
+        <Camera className="size-3.5 text-accent" />
+        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink">CAM 1 · gesture</p>
+        <span className="ml-auto font-mono text-[9px] text-muted">
+          {running ? `${frame?.hand_detected ? 'hand tracked' : 'no hand'} · ${camera.fps.toFixed(0)} FPS` : 'camera off'}
+        </span>
+      </div>
+      {!running && (
+        <div className="absolute inset-x-3 bottom-3 rounded border border-line/60 bg-bg/80 px-2 py-1.5 text-center text-[10px] text-muted backdrop-blur">
+          Start the camera to track gestures here.
         </div>
       )}
+    </section>
+  )
+}
+
+function TwoCameraView({ title, children }: { title: string; children: React.ReactNode }) {
+  const object = useObjectCamera()
+  const view = useConduit((s) => s.signatureView)
+  const videoRef = useRef<HTMLVideoElement>(null)
+
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v) return
+    v.srcObject = object.stream
+    if (object.stream) void v.play().catch(() => undefined)
+    return () => {
+      v.srcObject = null
+    }
+  }, [object.stream])
+
+  const selectedIndex = object.devices.findIndex((d) => d.id === object.selected)
+  return (
+    <div className="grid h-full min-h-0 grid-rows-[1.45fr_1fr] gap-2 sm:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] sm:grid-rows-1">
+      <GestureFeed />
+      <section className="relative flex min-h-0 flex-col overflow-hidden rounded-lg border border-line/60 bg-black">
+        <div
+          className="absolute inset-0 transition-transform duration-90 ease-linear"
+          style={{
+            transform: `translate(${view.x * 100}%, ${view.y * 100}%) scale(${view.zoom}) rotate(${view.rotation}deg)`,
+            transformOrigin: '50% 50%',
+          }}
+        >
+          {object.stream ? (
+            <video ref={videoRef} muted playsInline autoPlay className="h-full w-full object-fill" />
+          ) : (
+            <div className="grid-bg absolute inset-0" />
+          )}
+        </div>
+        <div className="relative z-20 flex flex-wrap items-center gap-1.5 bg-bg/85 px-2 py-1.5 backdrop-blur">
+          <Camera className="size-3.5 text-warn" />
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink">
+            CAM 2 · object {selectedIndex >= 0 && <span className="font-mono text-muted">#{selectedIndex}</span>}
+          </p>
+          <Pill tone={object.status === 'live' ? 'teal' : object.status === 'fallback' ? 'warn' : 'neutral'}>
+            {object.status === 'live' ? 'live' : object.status === 'starting' ? 'starting' : object.status === 'fallback' ? 'same camera' : 'no camera'}
+          </Pill>
+          <span className="hidden text-[9px] text-muted md:inline">{title}</span>
+          <span className="ml-auto text-[9px] uppercase tracking-wider text-muted">
+            camera index in Settings
+          </span>
+        </div>
+        <div className="relative min-h-0 flex-1">
+          {children}
+          {object.status !== 'live' && object.status !== 'starting' && (
+            <div className="absolute inset-x-3 bottom-2 z-10 rounded border border-warn/40 bg-bg/85 px-2 py-1 text-[9px] leading-snug text-warn backdrop-blur">
+              {object.status === 'fallback'
+                ? 'Second camera unavailable — showing the gesture camera. Connect/select a second webcam for a separate object view.'
+                : `Object camera could not open. ${object.error}`}
+            </div>
+          )}
+        </div>
+      </section>
     </div>
+  )
+}
+
+// ------------------------------------------------------------------ LIVE CAMERA SIGNATURES
+// Semiconductor / industrial / accessibility manipulate the real webcam image. The transform is
+// applied by CameraStage to the video and landmark canvas together; these components are HUDs only.
+
+function LiveZoomBadge({ zoom, rotation }: { zoom: number; rotation?: number }) {
+  return (
+    <div className="pointer-events-none absolute right-3 top-3 rounded-md border border-line/70 bg-bg/80 px-2 py-1 text-right font-mono text-[10px] text-ink/80 backdrop-blur">
+      {zoom.toFixed(1)}×
+      {rotation !== undefined && <><br /><span className="text-muted">{rotation.toFixed(0)}°</span></>}
+    </div>
+  )
+}
+
+export function LiveCameraZoom() {
+  const hands = useSignatureHands()
+  const cam = useSignatureCamera()
+  const [hint, setHint] = useState('')
+
+  useTwoHandTransform((d) => {
+    if (Math.abs(d.spread) > (Math.abs(d.x) + Math.abs(d.y)) * 1.15) {
+      cam.zoomBy(1 + d.spread * 3.4)
+      setHint(d.spread > 0 ? 'TWO-HAND SPREAD · ZOOM IN' : 'TWO-HAND PINCH · ZOOM OUT')
+    } else {
+      cam.panBy(d.x, d.y)
+      setHint('TWO-HAND TOGETHER · PAN')
+    }
+  }, hands.ready)
+
+  usePinchDrag((dx, dy) => {
+    cam.panBy(dx * 0.9, dy * 0.9)
+    setHint('PINCH-DRAG · PAN')
+  }, hands.ready && !hands.twoHand)
+
+  return (
+    <div className="relative h-full">
+      <div className="pointer-events-none absolute left-3 top-3 flex flex-wrap gap-1.5">
+        <GestureChip active={hands.twoHand}>two-hand zoom / pan</GestureChip>
+        <GestureChip active={hands.primary?.gesture === 'pinch' && !hands.twoHand}>pinch-drag pan</GestureChip>
+      </div>
+      <LiveZoomBadge zoom={cam.zoom} />
+      <div className="pointer-events-none absolute inset-x-3 bottom-3 flex flex-wrap items-center gap-2 rounded-md border border-line/50 bg-bg/75 px-2 py-1.5 backdrop-blur">
+        <GestureChip active={!!hint}>{hint || (hands.twoHand ? 'TWO HANDS DETECTED' : 'SPREAD BOTH HANDS TO ZOOM')}</GestureChip>
+        <span className="text-[10px] text-muted">Only CAM 2 — the object camera — is zoomed and panned.</span>
+        <button onClick={() => cam.zoomBy(1 / 1.3)} aria-label="Zoom camera out" className="pointer-events-auto ml-auto rounded border border-line p-1 text-muted hover:text-ink"><Minus className="size-3" /></button>
+        <button onClick={() => cam.zoomBy(1.3)} aria-label="Zoom camera in" className="pointer-events-auto rounded border border-line p-1 text-muted hover:text-ink"><Plus className="size-3" /></button>
+        <button onClick={cam.reset} className="pointer-events-auto inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-[10px] text-muted hover:text-ink"><RotateCcw className="size-3" /> Reset view</button>
+      </div>
+      {!hands.primary && <NoHand>Spread both hands apart to zoom CAM 2 in, bring them together to zoom out, or move both hands to pan. One-handed fallback: pinch and drag.</NoHand>}
+    </div>
+  )
+}
+
+export function LiveCameraMachine() {
+  const state = useModeState()
+  const hands = useSignatureHands()
+  const cam = useSignatureCamera()
+  const [viewStep, setViewStep] = useState(state?.stepIndex ?? 0)
+  const [hint, setHint] = useState('')
+
+  useWristRotation((deg) => {
+    cam.rotateBy(deg)
+    setHint('WRIST ROTATE · LIVE CAMERA')
+  }, hands.ready && !hands.twoHand)
+
+  useTwoHandTransform((d) => {
+    if (Math.abs(d.spread) > (Math.abs(d.x) + Math.abs(d.y)) * 1.15) {
+      cam.zoomBy(1 + d.spread * 3.4)
+      setHint(d.spread > 0 ? 'TWO-HAND SPREAD · ZOOM IN' : 'TWO-HAND PINCH · ZOOM OUT')
+    } else {
+      cam.panBy(d.x, d.y)
+      setHint('TWO-HAND TOGETHER · PAN')
+    }
+  }, hands.ready)
+
+  usePinchDrag((dx, dy) => {
+    cam.panBy(dx * 0.9, dy * 0.9)
+    setHint('PINCH-DRAG · PAN')
+  }, hands.ready && !hands.twoHand)
+
+  useHorizontalSwipe((dir) => {
+    setViewStep((s) => (s + dir + MANUAL_STEPS.length) % MANUAL_STEPS.length)
+    setHint(dir > 0 ? 'SWIPE → NEXT STEP' : 'SWIPE ← PREVIOUS STEP')
+  }, hands.ready && !hands.twoHand)
+
+  const current = MANUAL_STEPS[viewStep % MANUAL_STEPS.length]
+  return (
+    <div className="relative h-full">
+      <div className="pointer-events-none absolute left-3 top-3 flex flex-wrap gap-1.5">
+        <GestureChip active={!!hands.primary && !hands.twoHand}>wrist rotate</GestureChip>
+        <GestureChip active={hands.twoHand}>two-hand zoom / pan</GestureChip>
+        <GestureChip active={hands.primary?.gesture === 'pinch' && !hands.twoHand}>pinch-drag pan</GestureChip>
+      </div>
+      <LiveZoomBadge zoom={cam.zoom} rotation={cam.rotation} />
+      <div className="pointer-events-none absolute inset-x-3 bottom-3 rounded-md border border-line/50 bg-bg/75 px-2 py-1.5 backdrop-blur">
+        <div className="flex flex-wrap items-center gap-2">
+          <GestureChip active={!!hint}>{hint || 'WRIST ROTATE · TWO-HAND ZOOM · SWIPE STEP'}</GestureChip>
+          <span className="font-mono text-[10px] text-muted">{viewStep + 1}/{MANUAL_STEPS.length}</span>
+          <button onClick={() => cam.zoomBy(1 / 1.3)} aria-label="Zoom camera out" className="pointer-events-auto ml-auto rounded border border-line p-1 text-muted hover:text-ink"><Minus className="size-3" /></button>
+          <button onClick={() => cam.zoomBy(1.3)} aria-label="Zoom camera in" className="pointer-events-auto rounded border border-line p-1 text-muted hover:text-ink"><Plus className="size-3" /></button>
+          <button onClick={cam.reset} className="pointer-events-auto inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-[10px] text-muted hover:text-ink"><RotateCcw className="size-3" /> Reset view</button>
+        </div>
+        <p className="mt-1 text-[11px] font-medium text-ink">{current.title}</p>
+        <p className="text-[9px] text-muted">Viewing only — completing a step still requires the authorised COMPLETE control.</p>
+      </div>
+      {!hands.primary && <NoHand>Rotate your wrist to turn CAM 2, spread both hands to zoom, pinch-drag to pan, and swipe horizontally to browse repair steps.</NoHand>}
+    </div>
+  )
+}
+
+export function CameraMagnifier() {
+  const hands = useSignatureHands()
+  const cam = useSignatureCamera(4)
+  const settings = useConduit((s) => s.settings)
+  const [hint, setHint] = useState('')
+
+  useTwoHandTransform((d) => {
+    if (Math.abs(d.spread) > (Math.abs(d.x) + Math.abs(d.y)) * 1.15) {
+      cam.zoomBy(1 + d.spread * 3)
+      setHint(d.spread > 0 ? 'TWO-HAND SPREAD · MAGNIFY' : 'TWO-HAND PINCH · REDUCE')
+    } else {
+      cam.panBy(d.x, d.y)
+      setHint('TWO-HAND TOGETHER · PAN')
+    }
+  }, hands.ready)
+
+  usePinchDrag((dx, dy) => {
+    cam.panBy(dx * 0.9, dy * 0.9)
+    setHint('PINCH-DRAG · PAN')
+  }, hands.ready && !hands.twoHand)
+
+  const bigBtn = 'pointer-events-auto inline-flex size-12 items-center justify-center rounded-xl border border-line bg-bg/85 text-ink shadow-lg backdrop-blur hover:border-accent/60'
+  return (
+    <div className="relative h-full">
+      <div className="pointer-events-none absolute left-3 top-3 flex flex-wrap gap-1.5">
+        <GestureChip active={hands.twoHand}>two-hand magnify</GestureChip>
+        <GestureChip active={hands.primary?.gesture === 'pinch' && !hands.twoHand}>pinch-drag pan</GestureChip>
+        <GestureChip active>dwell {settings.intent.min_dwell_s.toFixed(1)}s</GestureChip>
+      </div>
+      <div className="pointer-events-none absolute right-3 top-3 rounded-lg border border-line/70 bg-bg/85 px-3 py-2 text-right backdrop-blur">
+        <p className="font-mono text-2xl font-semibold text-ink">{cam.zoom.toFixed(1)}×</p>
+        <p className="text-[9px] uppercase tracking-wider text-muted">live magnification</p>
+      </div>
+      <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-2">
+        <button className={bigBtn} aria-label="Zoom out" onClick={() => cam.zoomBy(1 / 1.3)}><Minus className="size-6" /></button>
+        <button className="pointer-events-auto inline-flex h-12 items-center justify-center rounded-xl border border-line bg-bg/85 px-4 text-xs font-medium text-ink shadow-lg backdrop-blur hover:border-accent/60" onClick={cam.reset}>1× · reset</button>
+        <button className={bigBtn} aria-label="Zoom in" onClick={() => cam.zoomBy(1.3)}><Plus className="size-6" /></button>
+      </div>
+      <p className="pointer-events-none absolute inset-x-3 bottom-20 text-center text-[10px] text-ink/80">
+        <span className="rounded bg-bg/70 px-2 py-1 backdrop-blur">{hint || 'Spread both hands to magnify. Large buttons are an alternative to gestures.'}</span>
+      </p>
+      {!hands.primary && <NoHand>Spread both hands apart to magnify CAM 2, move both hands to pan, or use the large − / + buttons. Magnification is view-only.</NoHand>}
+    </div>
+  )
+}
+
+// ------------------------------------------------------------------ dispatcher
+export function SignatureScreen({ modeId }: { modeId: 'hospital' | 'semiconductor' | 'industrial' | 'food_processing' | 'accessibility' }) {
+  if (modeId === 'hospital') return <HospitalImaging compact />
+  if (modeId === 'semiconductor') {
+    return (
+      <TwoCameraView title="two-hand zoom">
+        <LiveCameraZoom />
+      </TwoCameraView>
+    )
+  }
+  if (modeId === 'industrial') {
+    return (
+      <TwoCameraView title="wrist rotate · two-hand zoom">
+        <LiveCameraMachine />
+      </TwoCameraView>
+    )
+  }
+  if (modeId === 'food_processing') {
+    return (
+      <TwoCameraView title="preparation timer">
+        <PrepTimer compact live hideHeader />
+      </TwoCameraView>
+    )
+  }
+  return (
+    <TwoCameraView title="adaptive magnification">
+      <CameraMagnifier />
+    </TwoCameraView>
   )
 }
