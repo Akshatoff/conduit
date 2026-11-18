@@ -10,6 +10,9 @@ Conduit:      hand tracked → movement analysed → context established → int
               → command validated → device controlled → acknowledgement → state verified
 ```
 
+> **New here?** The complete gesture and capability walkthrough is in [`tutorial.md`](tutorial.md) —
+> every pose, signature-screen control, Settings option, mode gesture and troubleshooting step.
+
 Conduit is a **multi-environment platform**: one shared Intent Engine drives five explicitly different
 operational environments — hospital workstation, semiconductor cleanroom workstation, industrial
 maintenance, commercial kitchen and accessibility/adaptive interaction. Each environment has its own
@@ -45,17 +48,37 @@ compact current-step/recent-action rail beside it. The full dashboard, virtual-c
 history and demonstration guide live behind one-click **Details** tabs instead of competing with the
 camera for space.
 
-Each environment also has a **Signature screen** (toolbar toggle, or open the dashboard): a full-stage
-gesture surface that responds to movement, with a small indicator naming the active gesture. It is
-navigation only — it can never command a device or bypass the Intent Engine.
+Each environment also has a **Signature screen** (toolbar toggle, or open the dashboard). Hospital keeps
+a fictional image viewer. Every other environment shows **two cameras**:
+
+- **CAM 1 · gesture** — the camera MediaPipe is tracking, drawn with its hand landmarks. It takes the
+  larger pane (~60%).
+- **CAM 2 · object** — a second physical camera pointed at the object; only this feed is zoomed, panned,
+  rotated or magnified by the gesture. Choose its **camera index** in **Settings → Camera → Signature
+  object camera (CAM 2)** (`Camera 0 · …`, `Camera 1 · …`); the choice is remembered per browser and the
+  CAM 2 header shows the active index.
+
+If only one webcam is available, CAM 2 falls back to the gesture stream and says so. The signature screen
+is navigation only and can never command a device or bypass the Intent Engine.
+
+Signature interaction is **pose-based**, so the classifier decides what to do instead of a threshold on
+hand distance:
+
+- **Pinch** (thumb + index together) → zoom in. Hold the pinch to keep zooming.
+- **Open palm, held still** → zoom out. After a pinch, briefly close a fist first so releasing the pinch
+  cannot undo it; the hint says `FIST OR POINT · RE-ARM ZOOM OUT`.
+- **Fist, rotated** → rotate the object camera.
+- **Point + drag** → pan.
+- **Open-palm swipe** → change image / page steps (movement is reserved for the swipe, so a still open
+  hand is needed for zoom-out).
 
 | Environment | Problem it demonstrates | Signature interaction | Hardware |
 |---|---|---|---|
-| **Hospital / clinical** | Accessing information while hands are occupied, without repeatedly touching a shared screen | Fictional patient overview / records; horizontal swipe changes image, pinch-drag pans, two-hand spread zooms the sample viewer; checklist, timer, assistance request | shared LED |
-| **Semiconductor / cleanroom** | Following process instructions and inspection data with gloved hands | 5-stage simulated wafer flow; two-hand spread/together zooms the fictional wafer map and both hands moving pans it, with defect detail sharpening on zoom; defect categories, records, equipment dashboard | LED status, ventilation fan, servo model access |
-| **Industrial maintenance** | Reading procedures and recording findings while holding tools | Equipment readings, digital manual, inspection checklist, maintenance timer, fault report + assistance; wrist rotation turns the machine diagram, horizontal swipe pages repair steps, pinch opens a component | LED indicator, servo service latch |
-| **Food processing** | Following recipes and timers without touching a shared screen | Three fictional recipes, ingredient quantities, preparation steps, cooking timer, QC checklist, order board; a circular hand motion sets the preparation timer, pinch starts/pauses, lower-edge swipe pages steps | shared LED |
-| **Accessibility / adaptive** | A single fixed input method excludes people | Live dwell / confidence / stability / **gesture sensitivity** / confirmation-gesture configuration, large-control preset; large adaptive panels with a dwell preview and reading view | shared LED |
+| **Hospital / clinical** | Accessing information while hands are occupied, without repeatedly touching a shared screen | Fictional patient overview / records; pinch zooms in, open hand zooms out, point-drag pans, open-palm swipe changes image; checklist, timer, assistance request | shared LED |
+| **Semiconductor / cleanroom** | Following process instructions and inspection data with gloved hands | 5-stage simulated wafer flow; **Signature screen: CAM 1 tracks hands, CAM 2 zooms/pans the object camera** with pinch/open-hand and point-drag; defect categories, wafer dashboard, records, equipment | LED status, ventilation fan, servo model access |
+| **Industrial maintenance** | Reading procedures and recording findings while holding tools | Equipment readings, digital manual, inspection checklist, maintenance timer, fault report + assistance; **Signature screen rotates/zooms the CAM 2 object camera** with fist rotation, pinch/open-hand zoom, point-drag pan and swipe paging | LED indicator, servo service latch |
+| **Food processing** | Following recipes and timers without touching a shared screen | Three fictional recipes, ingredient quantities, preparation steps, cooking timer, QC checklist, order board; **Signature screen shows CAM 1 + CAM 2** while a circular hand motion sets the timer, pinch starts/pauses and lower-edge swipe pages steps | shared LED |
+| **Accessibility / adaptive** | A single fixed input method excludes people | Live dwell / confidence / stability / **gesture sensitivity** / confirmation-gesture configuration, large-control preset; **Signature screen magnifies CAM 2** with pinch/open-hand or large −/+ buttons | shared LED |
 
 Every environment includes a guided demonstration script (auto-advancing as authorised actions occur),
 a **Reset demo** action, per-environment interaction history and explicit safety/scope statements.
@@ -147,10 +170,11 @@ The full staged sequence is in [`docs/MODES.md`](docs/MODES.md#recommended-judge
 5. **Semiconductor:** change environment (camera keeps running). Advance a process stage, open the fictional
    wafer inspection, switch defect category, confirm a simulated record, then toggle **EQUIP LED**, **VENT FAN** and
    **ACCESS**; show the mode indicators on the Twin page (`node` vs `ui`).
-6. **Signature screens:** open **Signature screen** in each environment and perform its gesture — hospital
-   swipe/pinch/two-hand zoom, semiconductor two-hand wafer zoom/pan, industrial wrist rotation + component
-   pinch, food circular timer, accessibility hand-focus dwell preview. Point out the gesture chips and that the
-   overlay only changes the view.
+6. **Signature screens:** open **Signature screen** in each environment. Hospital swipes fictional images.
+   Everywhere else you get CAM 1 (gesture tracking with landmarks) and CAM 2 (the object camera), each
+   labelled. Point CAM 2 at the object and perform the gesture — pinch zoom, open-hand zoom-out, fist rotation, point-drag pan, large
+   magnifier buttons — while CAM 1 stays raw. Food keeps both cameras visible and sets the timer by circling.
+   Point out the gesture chips and that the view never issues a command.
 7. **Industrial / Food:** briefly show one workflow each (manual → step → checklist → simulated fault; or
    recipe → quantities → timer → QC/order). **Accessibility:** change dwell/confidence, gesture sensitivity and
    the confirmation gesture live, toggle large controls, and show the same engine becoming stricter/looser without a restart.
@@ -253,7 +277,7 @@ scripts\test.bat
 | Python (114 tests) | `python -m pytest -q` | landmark features & gestures (rotation/scale invariance), second-hand landmarks exposed for signature views, trajectory maths, **intent state transitions**, confidence threshold, accidental-movement rejection, confirmation/cancel/timeouts, cooldown & duplicate prevention, command validation, simulation acks, ESP32 failure/mocked HTTP, analytics definitions, SQLite, REST + WebSocket, full pipeline (synthetic landmarks → engine → controller → twin → DB → analytics), **mode zones with explicit actions, digital execution never touching the twin, workspace analytics, API workspace round-trip** |
 | TS parity | `npm run test:parity` | TypeScript engine makes the same decisions as the Python engine |
 | TS modes | `npm run test:modes` | five environments, registry/workflow/zone integrity, one shared engine authorises each mode, accidental sweep rejected, mode history/reset |
-| UI smoke (optional) | `npm i --no-save jsdom ws`, bundle `tests_ts/ui-smoke.tsx` / `backend-smoke.tsx` with esbuild (`--loader:.css=empty --jsx=automatic --platform=node`), run with `node tests_ts/jsdom-harness.cjs <bundle> [url]` | all screens render incl. the environment screen; browser runtime pipeline end-to-end; entering a mode loads its dashboard/zones without restarting the camera; a digital control is confirmed in the mode layer and leaves physical twins untouched; all five signature screens respond to injected frames while issuing no command (swipe, two-hand zoom, wrist rotation, circular timer, adaptive focus); frontend ↔ live FastAPI over REST+WS incl. failure paths and workspace persistence |
+| UI smoke (optional) | `npm i --no-save jsdom ws`, bundle `tests_ts/ui-smoke.tsx` / `backend-smoke.tsx` with esbuild (`--loader:.css=empty --jsx=automatic --platform=node`), run with `node tests_ts/jsdom-harness.cjs <bundle> [url]` | all screens render incl. the environment screen; browser runtime pipeline end-to-end; entering a mode loads its dashboard/zones without restarting the camera; a digital control is confirmed in the mode layer and leaves physical twins untouched; all five signature screens respond to injected frames while issuing no command; the non-hospital views expose separate CAM 1 / CAM 2 panes and the object feed carries the gesture transform; frontend ↔ live FastAPI over REST+WS incl. failure paths and workspace persistence |
 
 None of the automated tests needs a camera or an ESP32.
 
@@ -288,6 +312,7 @@ None of the automated tests needs a camera or an ESP32.
 * **Mode-layer limitations:** workflow preconditions (e.g. confirm an inspection only after opening it) are
   evaluated in the UI; the backend validates intent authorisation and digital-vs-physical routing, not every
   business rule. A digitally authorised action that is not applicable is clearly shown as such in the history.
+* The two-camera signature view needs a second physical camera for a distinct object image; with one webcam, CAM 2 falls back to the gesture feed and is labelled `same camera`. If Settings lists only one camera, the browser is exposing one device — connect the second camera, close other apps using it, and use **Refresh** in Settings.
 * Modes are demonstration scenarios only. The accessibility mode has not been co-designed with disabled users
   and gesture interaction is not suitable for everyone.
 * Mode zone layouts are two rails with a central corridor; real-camera rehearsals may still need threshold

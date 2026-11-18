@@ -47,6 +47,7 @@ export class LocalRuntime implements Runtime {
   private controller: DeviceController
   private engine: IntentEngine
   private baseline: BaselineController
+  private signaturePaused = false
   private analytics = new LocalAnalytics()
   private smoother = new PositionSmoother(0.5)
   private secondSmoother = new PositionSmoother(0.5)
@@ -325,7 +326,22 @@ export class LocalRuntime implements Runtime {
     const t0 = performance.now()
     let snapshot: IntentSnapshot
     let events: IntentEvent[]
-    if (get().interactionMode === 'conduit') {
+    const signatureOpen = get().signatureView.active
+    if (signatureOpen) {
+      // The signature screen is view-only. Pause command processing so a pose used to rotate or
+      // zoom (especially a held fist, which is the emergency-stop gesture) cannot command or
+      // cancel anything behind the overlay. The engine restarts cleanly when the overlay closes.
+      if (!this.signaturePaused) {
+        this.signaturePaused = true
+        this.engine.reset()
+      }
+      snapshot = this.engine.snapshot()
+      events = []
+    } else if (this.signaturePaused) {
+      this.signaturePaused = false
+      this.engine.reset()
+      ;({ snapshot, events } = this.engine.update(inp))
+    } else if (get().interactionMode === 'conduit') {
       ;({ snapshot, events } = this.engine.update(inp))
     } else {
       events = this.baseline.update(inp).map((req) => ({

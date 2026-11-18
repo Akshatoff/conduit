@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { Btn, Card, Field, Pill, inputCls } from '../components/ui'
 import { DEVICE_SPECS, defaultSettings } from '../core/config'
 import type { AppSettings } from '../core/types'
+import { readObjectCameraId, subscribeObjectCamera, writeObjectCameraId } from '../objectCamera'
 import { rt } from '../runtime'
 import { useConduit } from '../store'
 import { cn } from '../utils/cn'
@@ -44,6 +45,49 @@ export function SettingsPage() {
   const [s, setS] = useState<AppSettings>(() => structuredClone(stored))
   const [url, setUrl] = useState(backendUrl)
   const [dirty, setDirty] = useState(false)
+  const [objectCamera, setObjectCamera] = useState(readObjectCameraId)
+  const [objectDevices, setObjectDevices] = useState<{ id: string; label: string }[]>([])
+  const [scanningCameras, setScanningCameras] = useState(false)
+
+  const refreshObjectCameras = async (requestPermission: boolean) => {
+    if (!navigator.mediaDevices?.enumerateDevices) return
+    setScanningCameras(true)
+    try {
+      if (requestPermission && navigator.mediaDevices.getUserMedia) {
+        // A short probe makes browsers expose every camera + label; release it immediately.
+        try {
+          const probe = await navigator.mediaDevices.getUserMedia({ video: true })
+          probe.getTracks().forEach((t) => t.stop())
+        } catch {
+          /* permission may be denied; enumerate what we can */
+        }
+      }
+      const all = await navigator.mediaDevices.enumerateDevices()
+      setObjectDevices(all.filter((d) => d.kind === 'videoinput').map((d, i) => ({ id: d.deviceId, label: d.label || `Camera ${i}` })))
+    } catch {
+      setObjectDevices([])
+    } finally {
+      setScanningCameras(false)
+    }
+  }
+
+  useEffect(() => {
+    const unsubscribe = subscribeObjectCamera(setObjectCamera)
+    const onDeviceChange = () => void refreshObjectCameras(false)
+    void refreshObjectCameras(false)
+    navigator.mediaDevices?.addEventListener?.('devicechange', onDeviceChange)
+    return () => {
+      unsubscribe()
+      navigator.mediaDevices?.removeEventListener?.('devicechange', onDeviceChange)
+    }
+    // Refresh once on mount; the explicit button re-probes permissions.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const chooseObjectCamera = (id: string) => {
+    setObjectCamera(id)
+    writeObjectCameraId(id)
+  }
 
   useEffect(() => {
     if (!dirty) setS(structuredClone(stored))
@@ -162,6 +206,37 @@ export function SettingsPage() {
             </Field>
             <div className="sm:col-span-2">
               <Slider label="Landmark smoothing" value={s.camera.smoothing_alpha} min={0.1} max={1} step={0.05} hint="Lower = smoother but laggier. 1 = no smoothing." onChange={(v) => upd((d) => void (d.camera.smoothing_alpha = v))} />
+            </div>
+            <div className="space-y-3 rounded-lg border border-line/70 bg-bg/40 p-3 sm:col-span-2">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-ink">Signature object camera (CAM 2)</p>
+                  <p className="text-[11px] leading-relaxed text-muted">
+                    Second camera used by the signature screens; CAM 1 always stays the tracked gesture camera.
+                    Indices follow the browser's camera order.
+                  </p>
+                </div>
+                <Btn size="sm" onClick={() => void refreshObjectCameras(true)} disabled={scanningCameras}>
+                  <RotateCcw className={cn('size-3.5', scanningCameras && 'animate-spin')} /> {scanningCameras ? 'Scanning…' : 'Refresh'}
+                </Btn>
+              </div>
+              <Field label="Object camera index" hint="Choose the camera pointed at the object. Used only by signature screens.">
+                <select className={inputCls} value={objectCamera} onChange={(e) => chooseObjectCamera(e.target.value)} aria-label="Object camera index">
+                  <option value="">Auto · first non-gesture camera</option>
+                  {objectDevices.map((c, i) => (
+                    <option key={`${c.id}-${i}`} value={c.id}>
+                      Camera {i} · {c.label}
+                    </option>
+                  ))}
+                  {objectCamera && !objectDevices.some((c) => c.id === objectCamera) && <option value={objectCamera}>Saved camera (not currently listed)</option>}
+                </select>
+              </Field>
+              {objectDevices.length <= 1 && (
+                <p className="text-[10px] leading-relaxed text-warn">
+                  Only one video device is currently exposed. Connect the second camera, close other apps using it,
+                  then press Refresh. With one camera, CAM 2 falls back to the gesture feed and is labelled “same camera”.
+                </p>
+              )}
             </div>
           </div>
         </Card>
