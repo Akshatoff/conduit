@@ -10,6 +10,9 @@ Conduit:      hand tracked → movement analysed → context established → int
               → command validated → device controlled → acknowledgement → state verified
 ```
 
+> **New here?** The complete gesture and capability walkthrough is in [`tutorial.md`](tutorial.md) —
+> every pose, signature-screen control, Settings option, mode gesture and troubleshooting step.
+
 Conduit is a **multi-environment platform**: one shared Intent Engine drives five explicitly different
 operational environments — hospital workstation, semiconductor cleanroom workstation, industrial
 maintenance, commercial kitchen and accessibility/adaptive interaction. Each environment has its own
