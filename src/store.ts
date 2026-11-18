@@ -7,6 +7,15 @@ import type { ModeId, ModeState } from './modes/types'
 export type Page = 'modes' | 'workspace' | 'live' | 'twin' | 'analytics' | 'settings'
 export type PointerGesture = 'open_palm' | 'pinch' | 'fist' | 'point'
 
+/** View transform applied to the live camera while a signature screen is open. */
+export interface SignatureView {
+  active: boolean
+  zoom: number
+  x: number
+  y: number
+  rotation: number
+}
+
 export function idleSnapshot(): IntentSnapshot {
   return {
     state: 'IDLE', intent: 'NONE', active: false, target: null, target_label: null, action: null, confidence: 0, final_confidence: 0,
@@ -42,6 +51,7 @@ export interface ConduitState {
   settings: AppSettings
   analytics: AnalyticsSummary | null
   pointer: { gesture: PointerGesture; visible: boolean }
+  signatureView: SignatureView
   notice: string | null
 }
 
@@ -69,8 +79,15 @@ export const useConduit = create<ConduitState>(() => ({
   settings: defaultSettings(),
   analytics: null,
   pointer: { gesture: 'open_palm', visible: false },
+  signatureView: { active: false, zoom: 1, x: 0, y: 0, rotation: 0 },
   notice: null,
 }))
+
+export const DEFAULT_SIGNATURE_VIEW: SignatureView = { active: false, zoom: 1, x: 0, y: 0, rotation: 0 }
+
+export function resetSignatureView() {
+  useConduit.setState({ signatureView: { ...DEFAULT_SIGNATURE_VIEW } })
+}
 
 let logId = 0
 export function pushLog(e: Omit<LogEntry, 'id' | 'at'>) {

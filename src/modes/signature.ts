@@ -7,7 +7,7 @@
 // The Intent Engine keeps consuming only the primary hand. Two-hand data is optional and is used
 // solely to drive these screens.
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { SecondHand, VisionFrame } from '../core/types'
 import { useConduit } from '../store'
 
@@ -38,7 +38,10 @@ export function useSignatureHands(): SignatureHands {
   const twoHand = !!primary && !!second
   const spread = primary && second ? dist2(primary, second.position) : null
   const center = primary && second ? { x: (primary.x + second.position.x) / 2, y: (primary.y + second.position.y) / 2 } : null
-  const ready = !!primary && !BLOCKING.has(intent.state) && !intent.target
+  // Hovering a workspace control must not silently pause the signature view: nothing here can
+  // activate that control, and the Intent Engine still owns every mode action. Only an in-flight
+  // selection/confirmation/execution pauses navigation gestures.
+  const ready = !!primary && !BLOCKING.has(intent.state)
   return { frame, primary, second, twoHand, spread, center, ready }
 }
 
@@ -104,27 +107,156 @@ export function usePinchDrag(onDelta: (dx: number, dy: number) => void, enabled:
   }, [active, p?.x, p?.y])
 }
 
-/** Two-hand spread/centre deltas: spread drives zoom, common centre movement drives pan. */
-export function useTwoHandTransform(
-  onDelta: (d: { spread: number; x: number; y: number }) => void,
+// Two-hand zoom uses *held zones*, not frame-to-frame deltas. Once a zoom stroke starts it keeps
+// going until both hands return to the neutral width, where it stops. Re-opening the hands to
+// neutral therefore cannot undo a zoom-out (the old delta mapping treated that return as zoom-in).
+//
+// Zones are relative to the width the user naturally holds when two hands appear, because camera
+// distance/framing changes the absolute distance a lot. A neutral band around that baseline means
+// returning to rest always freezes the transform instead of starting the opposite gesture.
+export const SPREAD_METER_MIN = 0.08
+export const SPREAD_METER_MAX = 0.7
+
+export type TwoHandZoomDirection = 1 | -1 | 0
+
+export interface TwoHandZones {
+  neutral: number
+  outEnter: number
+  outExit: number
+  inExit: number
+  inEnter: number
+}
+
+export function twoHandZones(neutral: number): TwoHandZones {
+  const n = clamp(neutral, 0.2, 0.52)
+  return {
+    neutral: n,
+    outEnter: Math.min(n * 0.55, 0.2),
+    outExit: Math.min(n * 0.78, 0.27),
+    inExit: Math.max(n * 1.12, 0.34),
+    inEnter: Math.max(n * 1.35, 0.42),
+  }
+}
+
+/**
+ * Held two-hand zoom. `onZoom` receives a per-frame multiplier plus the active direction.
+ * Hysteresis keeps jitter from flipping direction; the neutral band freezes the transform.
+ */
+export function useTwoHandZoom(
+  onZoom: (factor: number, direction: 1 | -1) => void,
+  enabled: boolean,
+  maxSpeed = 0.85,
+): { direction: TwoHandZoomDirection; spread: number | null; zones: TwoHandZones } {
+  const hands = useSignatureHands()
+  const cb = useRef(onZoom)
+  cb.current = onZoom
+  const state = useRef({
+    direction: 0 as TwoHandZoomDirection,
+    smoothed: null as number | null,
+    neutral: null as number | null,
+    lastT: 0,
+    lastSeen: 0,
+  })
+  const [direction, setDirection] = useState<TwoHandZoomDirection>(0)
+  const spread = hands.spread
+  const now = hands.frame?.timestamp ?? 0
+
+  useEffect(() => {
+    const st = state.current
+    if (!enabled || !hands.frame) {
+      st.direction = 0
+      st.smoothed = null
+      st.neutral = null
+      st.lastT = 0
+      st.lastSeen = 0
+      setDirection(0)
+      return
+    }
+
+    if (!hands.twoHand || spread == null) {
+      // One hand briefly lost mid-stroke: freeze and keep the calibrated neutral width. Only a
+      // longer absence (or leaving the screen) forces a fresh baseline.
+      st.direction = 0
+      st.lastT = 0
+      setDirection(0)
+      if (st.lastSeen && now - st.lastSeen > 0.3) {
+        st.smoothed = null
+        st.neutral = null
+        st.lastSeen = 0
+      }
+      return
+    }
+    st.lastSeen = now
+
+    if (st.neutral == null) {
+      // Capture the resting two-hand width, then require a deliberate spread/pinch beyond it.
+      st.neutral = clamp(spread, 0.2, 0.52)
+      st.smoothed = spread
+      st.lastT = now
+      setDirection(0)
+      return
+    }
+
+    st.smoothed = st.smoothed == null ? spread : st.smoothed + (spread - st.smoothed) * 0.45
+    const v = st.smoothed
+    // While no stroke is active, drift the baseline toward a held resting width. This keeps the
+    // thresholds right if the first two-hand frame was caught mid-raise, without letting a fast
+    // spread escape its own trigger.
+    if (st.direction === 0) {
+      const rest = twoHandZones(st.neutral)
+      if (v >= rest.outExit && v <= rest.inExit) st.neutral += (v - st.neutral) * 0.03
+    }
+    const z = twoHandZones(st.neutral)
+
+    let next = st.direction
+    if (next === 1 && v < z.inExit) next = 0
+    else if (next === -1 && v > z.outExit) next = 0
+    else if (next === 0) {
+      if (v > z.inEnter) next = 1
+      else if (v < z.outEnter) next = -1
+    }
+
+    const dt = st.lastT ? clamp(now - st.lastT, 0, 0.12) : 0.016
+    st.lastT = now
+    st.direction = next
+    setDirection(next)
+
+    if (next !== 0 && dt > 0) {
+      const rate =
+        next === 1
+          ? clamp((v - z.inExit) / (SPREAD_METER_MAX - z.inExit), 0.2, 1)
+          : clamp((z.outExit - v) / (z.outExit - SPREAD_METER_MIN), 0.2, 1)
+      cb.current(Math.exp(next * rate * maxSpeed * dt), next)
+    }
+  }, [enabled, hands.twoHand, spread, now, hands.frame, maxSpeed])
+
+  return { direction, spread, zones: twoHandZones(state.current.neutral ?? 0.35) }
+}
+
+/** Common centre movement of two open hands, used for panning only while zoom is paused. */
+export function useTwoHandPan(
+  onDelta: (dx: number, dy: number) => void,
   enabled: boolean,
 ) {
   const hands = useSignatureHands()
-  const last = useRef<{ spread: number; x: number; y: number } | null>(null)
+  const last = useRef<{ x: number; y: number } | null>(null)
   const cb = useRef(onDelta)
   cb.current = onDelta
+  const active = enabled && hands.twoHand && !!hands.center
 
   useEffect(() => {
-    if (!enabled || !hands.twoHand || !hands.spread || !hands.center) {
+    if (!active || !hands.center) {
       last.current = null
       return
     }
-    const next = { spread: hands.spread, x: hands.center.x, y: hands.center.y }
     if (last.current) {
-      cb.current({ spread: next.spread - last.current.spread, x: next.x - last.current.x, y: next.y - last.current.y })
+      const dx = hands.center.x - last.current.x
+      const dy = hands.center.y - last.current.y
+      // Ignore sub-pixel wobble so a held pose does not drift the view.
+      if (Math.abs(dx) + Math.abs(dy) > 0.0012) cb.current(clamp(dx, -0.03, 0.03), clamp(dy, -0.03, 0.03))
     }
-    last.current = next
-  }, [enabled, hands.twoHand, hands.spread, hands.center?.x, hands.center?.y])
+    last.current = { x: hands.center.x, y: hands.center.y }
+  }, [active, hands.center?.x, hands.center?.y])
 }
 
 /** Wrist rotation deltas in degrees, unwrapped so crossing ±180° does not jump. */
@@ -182,4 +314,66 @@ export function useCircularGesture(onDelta: (deg: number) => void, enabled: bool
     }
     last.current = angle
   }, [active, p?.x, p?.y, center.x, center.y])
+}
+
+// ------------------------------------------------------------------ live camera view
+// Signature screens for semiconductor / industrial / accessibility transform the *live camera*
+// itself. The transform lives in the store so CameraStage can apply it to the video + landmark
+// canvas together, keeping the hand overlay aligned with the zoomed image.
+
+export const MIN_SIGNATURE_ZOOM = 1
+export const MAX_SIGNATURE_ZOOM = 5
+
+export function clampSignaturePan(x: number, y: number, zoom: number) {
+  const m = Math.max(0, ((zoom - 1) / 2) * 0.9)
+  return { x: clamp(x, -m, m), y: clamp(y, -m, m) }
+}
+
+export function useSignatureCamera(maxZoom = MAX_SIGNATURE_ZOOM) {
+  const view = useConduit((s) => s.signatureView)
+  const update = (fn: (v: typeof view) => Partial<typeof view>) =>
+    useConduit.setState((s) => {
+      const next = { ...s.signatureView, ...fn(s.signatureView) }
+      const p = clampSignaturePan(next.x, next.y, next.zoom)
+      return { signatureView: { ...next, ...p } }
+    })
+
+  return {
+    view,
+    zoom: view.zoom,
+    pan: { x: view.x, y: view.y },
+    rotation: view.rotation,
+    zoomBy(factor: number) {
+      update((v) => {
+        const zoom = clamp(v.zoom * factor, MIN_SIGNATURE_ZOOM, maxZoom)
+        return { zoom }
+      })
+    },
+    setZoom(zoom: number) {
+      update(() => ({ zoom: clamp(zoom, MIN_SIGNATURE_ZOOM, maxZoom) }))
+    },
+    panBy(dx: number, dy: number) {
+      update((v) => ({ x: v.x + dx, y: v.y + dy }))
+    },
+    rotateBy(deg: number) {
+      update((v) => ({ rotation: clamp(v.rotation + deg, -60, 60) }))
+    },
+    reset() {
+      update(() => ({ zoom: 1, x: 0, y: 0, rotation: 0 }))
+    },
+  }
+}
+
+/** Project a raw (unzoomed) normalised hand point through the same transform as the video. */
+export function projectSignaturePoint(
+  p: { x: number; y: number },
+  view: { zoom: number; x: number; y: number; rotation: number },
+) {
+  const dx = (p.x - 0.5) * view.zoom
+  const dy = (p.y - 0.5) * view.zoom
+  const r = (view.rotation * Math.PI) / 180
+  return {
+    x: 0.5 + dx * Math.cos(r) - dy * Math.sin(r) + view.x,
+    y: 0.5 + dx * Math.sin(r) + dy * Math.cos(r) + view.y,
+  }
 }
