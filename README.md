@@ -48,9 +48,11 @@ camera for space.
 Each environment also has a **Signature screen** (toolbar toggle, or open the dashboard). Hospital keeps
 a fictional image viewer. Every other environment shows **two cameras**:
 
-- **CAM 1 · gesture** — the camera MediaPipe is tracking, drawn with its hand landmarks.
+- **CAM 1 · gesture** — the camera MediaPipe is tracking, drawn with its hand landmarks. It takes the
+  larger pane (~60%).
 - **CAM 2 · object** — a second physical camera pointed at the object; only this feed is zoomed, panned,
-  rotated or magnified by the gesture. Pick it in the CAM 2 header (the choice is remembered).
+  rotated or magnified by the gesture. Pick its **camera index** (`Camera 0 · …`, `Camera 1 · …`) in the
+  CAM 2 header; the choice is remembered per browser.
 
 If only one webcam is available, CAM 2 falls back to the gesture stream and says so. The signature screen
 is navigation only and can never command a device or bypass the Intent Engine.

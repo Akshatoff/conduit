@@ -882,8 +882,9 @@ function TwoCameraView({ title, children }: { title: string; children: React.Rea
   }, [object.stream])
 
   const selectId = useId()
+  const selectedIndex = object.devices.findIndex((d) => d.id === object.selected)
   return (
-    <div className="grid h-full min-h-0 grid-rows-2 gap-2 sm:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)] sm:grid-rows-1">
+    <div className="grid h-full min-h-0 grid-rows-[1.45fr_1fr] gap-2 sm:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] sm:grid-rows-1">
       <GestureFeed />
       <section className="relative flex min-h-0 flex-col overflow-hidden rounded-lg border border-line/60 bg-black">
         <div
@@ -901,23 +902,27 @@ function TwoCameraView({ title, children }: { title: string; children: React.Rea
         </div>
         <div className="relative z-20 flex flex-wrap items-center gap-1.5 bg-bg/85 px-2 py-1.5 backdrop-blur">
           <Camera className="size-3.5 text-warn" />
-          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink">CAM 2 · object</p>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink">
+            CAM 2 · object {selectedIndex >= 0 && <span className="font-mono text-muted">#{selectedIndex}</span>}
+          </p>
           <Pill tone={object.status === 'live' ? 'teal' : object.status === 'fallback' ? 'warn' : 'neutral'}>
             {object.status === 'live' ? 'live' : object.status === 'starting' ? 'starting' : object.status === 'fallback' ? 'same camera' : 'no camera'}
           </Pill>
           <span className="hidden text-[9px] text-muted md:inline">{title}</span>
-          <label htmlFor={selectId} className="ml-auto text-[9px] text-muted">
+          <label htmlFor={selectId} className="ml-auto flex items-center gap-1 text-[9px] text-muted">
+            <span className="hidden uppercase tracking-wider sm:inline">object camera index</span>
             <span className="sr-only">Object camera</span>
             <select
               id={selectId}
               value={object.selected}
               onChange={(e) => object.choose(e.target.value)}
-              className="pointer-events-auto max-w-[11rem] rounded border border-line bg-bg/80 px-1.5 py-0.5 text-[9px] text-ink"
+              aria-label="Object camera index"
+              className="pointer-events-auto max-w-[14rem] rounded border border-line bg-bg/80 px-1.5 py-0.5 text-[9px] text-ink"
             >
               {object.devices.length === 0 && <option value="">no camera listed</option>}
-              {object.devices.map((d) => (
+              {object.devices.map((d, i) => (
                 <option key={d.id} value={d.id}>
-                  {d.label}{d.id === object.gestureId ? ' (gesture)' : ''}
+                  Camera {i} · {d.label}{d.id === object.gestureId ? ' (gesture)' : ''}
                 </option>
               ))}
             </select>

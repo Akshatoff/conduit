@@ -64,8 +64,10 @@ Each environment adds a **Signature screen** on top of the unchanged pipeline. I
 hand plus an optional second hand and drives *view state only*: hospital selects fictional images, while
 semiconductor, industrial, food and accessibility show **two camera panes**. CAM 1 is the gesture camera
 (the exact stream MediaPipe tracks, drawn with landmarks); CAM 2 is a separately selected physical camera
-pointed at the object, and only CAM 2 is zoomed, panned, rotated or magnified. Food keeps both panes visible
-with a timer HUD. If a second camera cannot be opened, CAM 2 mirrors CAM 1 and is labelled `same camera`.
+pointed at the object, and only CAM 2 is zoomed, panned, rotated or magnified. CAM 1 is the larger pane
+(~60%); CAM 2 has a **camera-index dropdown** (`Camera 0 · label`, `Camera 1 · label`, …) that persists the
+choice. Food keeps both panes visible with a timer HUD. If a second camera cannot be opened, CAM 2 mirrors
+CAM 1 and is labelled `same camera`.
 A small chip names the active gesture. It never emits a command and is paused while the Intent Engine is
 selecting, confirming or executing. The Python worker and browser runtime request up to two hands; the
 Intent Engine still consumes only the first (primary) hand.

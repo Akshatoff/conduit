@@ -230,6 +230,7 @@ async function main() {
   await gotoMode('semiconductor')
   await openSignature()
   check('signature view separates gesture camera from object camera', /CAM 1 · gesture/i.test(liveText()) && /CAM 2 · object/i.test(liveText()) && /Object camera/.test(liveText()), liveText().slice(0, 260))
+  check('object camera exposes an index dropdown', /object camera index/i.test(liveText()) && !!document.querySelector('[data-signature-live] select[aria-label="Object camera index"]'), liveText().slice(0, 320))
   await push(frameAt(0.4, 0.45, 'open_palm', 0, secondAt(0.6, 0.45)))
   await push(frameAt(0.3, 0.45, 'open_palm', 0, secondAt(0.75, 0.45)))
   check('semiconductor two-hand spread zooms the live camera', /TWO-HAND SPREAD · ZOOM IN/.test(liveText()) && /Only CAM 2 — the object camera — is zoomed and panned/.test(liveText()), liveText().slice(0, 300))
