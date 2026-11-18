@@ -183,3 +183,65 @@ export function useCircularGesture(onDelta: (deg: number) => void, enabled: bool
     last.current = angle
   }, [active, p?.x, p?.y, center.x, center.y])
 }
+
+// ------------------------------------------------------------------ live camera view
+// Signature screens for semiconductor / industrial / accessibility transform the *live camera*
+// itself. The transform lives in the store so CameraStage can apply it to the video + landmark
+// canvas together, keeping the hand overlay aligned with the zoomed image.
+
+export const MIN_SIGNATURE_ZOOM = 1
+export const MAX_SIGNATURE_ZOOM = 5
+
+export function clampSignaturePan(x: number, y: number, zoom: number) {
+  const m = Math.max(0, ((zoom - 1) / 2) * 0.9)
+  return { x: clamp(x, -m, m), y: clamp(y, -m, m) }
+}
+
+export function useSignatureCamera(maxZoom = MAX_SIGNATURE_ZOOM) {
+  const view = useConduit((s) => s.signatureView)
+  const update = (fn: (v: typeof view) => Partial<typeof view>) =>
+    useConduit.setState((s) => {
+      const next = { ...s.signatureView, ...fn(s.signatureView) }
+      const p = clampSignaturePan(next.x, next.y, next.zoom)
+      return { signatureView: { ...next, ...p } }
+    })
+
+  return {
+    view,
+    zoom: view.zoom,
+    pan: { x: view.x, y: view.y },
+    rotation: view.rotation,
+    zoomBy(factor: number) {
+      update((v) => {
+        const zoom = clamp(v.zoom * factor, MIN_SIGNATURE_ZOOM, maxZoom)
+        return { zoom }
+      })
+    },
+    setZoom(zoom: number) {
+      update(() => ({ zoom: clamp(zoom, MIN_SIGNATURE_ZOOM, maxZoom) }))
+    },
+    panBy(dx: number, dy: number) {
+      update((v) => ({ x: v.x + dx, y: v.y + dy }))
+    },
+    rotateBy(deg: number) {
+      update((v) => ({ rotation: clamp(v.rotation + deg, -60, 60) }))
+    },
+    reset() {
+      update(() => ({ zoom: 1, x: 0, y: 0, rotation: 0 }))
+    },
+  }
+}
+
+/** Project a raw (unzoomed) normalised hand point through the same transform as the video. */
+export function projectSignaturePoint(
+  p: { x: number; y: number },
+  view: { zoom: number; x: number; y: number; rotation: number },
+) {
+  const dx = (p.x - 0.5) * view.zoom
+  const dy = (p.y - 0.5) * view.zoom
+  const r = (view.rotation * Math.PI) / 180
+  return {
+    x: 0.5 + dx * Math.cos(r) - dy * Math.sin(r) + view.x,
+    y: 0.5 + dx * Math.sin(r) + dy * Math.cos(r) + view.y,
+  }
+}
