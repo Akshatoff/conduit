@@ -128,7 +128,7 @@ export interface TwoHandZones {
 }
 
 export function twoHandZones(neutral: number): TwoHandZones {
-  const n = clamp(neutral, 0.2, 0.52)
+  const n = clamp(neutral, 0.2, 0.58)
   return {
     neutral: n,
     outEnter: Math.min(n * 0.55, 0.2),
@@ -190,7 +190,7 @@ export function useTwoHandZoom(
 
     if (st.neutral == null) {
       // Capture the resting two-hand width, then require a deliberate spread/pinch beyond it.
-      st.neutral = clamp(spread, 0.2, 0.52)
+      st.neutral = clamp(spread, 0.2, 0.58)
       st.smoothed = spread
       st.lastT = now
       setDirection(0)
