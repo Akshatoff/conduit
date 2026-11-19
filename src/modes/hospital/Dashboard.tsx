@@ -84,7 +84,7 @@ export function HospitalDashboard() {
                 <HospitalImaging compact />
                 <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted">
                   <ScanLine className="size-3.5 text-accent" />
-                  Gesture view opened by the authorised IMAGING control. Move an open palm horizontally to change image, point-drag to pan, pinch to zoom in, hold an open hand still to zoom out. Nothing is loaded from a medical system.
+                  Gesture view opened by the authorised IMAGING control. Move an open palm horizontally to change image, point-drag to pan, pinch to zoom in, hold an open hand still to zoom out. Images are the local files in public/assets/xray — nothing is loaded from a medical system.
                 </div>
               </div>
             ) : (

@@ -82,60 +82,45 @@ function fmt(seconds: number) {
 }
 
 // ------------------------------------------------------------------ HOSPITAL
-const STUDIES = [
-  { id: 'IMG-014', title: 'Chest overview', modality: 'Simulated radiograph', variant: 0, note: 'Fictional demonstration study' },
-  { id: 'IMG-021', title: 'Head slice', modality: 'Simulated cross-section', variant: 1, note: 'Fictional demonstration study' },
-  { id: 'IMG-033', title: 'Abdominal overview', modality: 'Simulated section', variant: 2, note: 'Fictional demonstration study' },
+// Your own X-ray images live in public/assets/xray/ and are served at /assets/xray/... both by
+// Vite (dev + build) and by the backend when it serves the app. Exact file names, nothing else:
+const XRAY_DIR = '/assets/xray'
+const XRAY_IMAGES = [
+  { file: 'first.jpg', id: 'XRY-01', title: 'Local X-ray · first image', note: 'local file' },
+  { file: 'second.jpg', id: 'XRY-02', title: 'Local X-ray · second image', note: 'local file' },
+  { file: 'third.jpg', id: 'XRY-03', title: 'Local X-ray · third image', note: 'local file' },
 ]
 
-function HospitalScan({ variant, uid }: { variant: number; uid: string }) {
+function MissingXray({ file }: { file: string }) {
   return (
-    <svg viewBox="0 0 480 320" className="h-full w-full" role="img" aria-label="Fictional medical image for navigation demonstration — not diagnostic">
-      <defs>
-        <radialGradient id={`${uid}-bg`} cx="50%" cy="48%" r="70%">
-          <stop offset="0%" stopColor="#173652" />
-          <stop offset="100%" stopColor="#050a12" />
-        </radialGradient>
-        <linearGradient id={`${uid}-bone`} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#dbe9f7" stopOpacity="0.9" />
-          <stop offset="100%" stopColor="#7da2c7" stopOpacity="0.45" />
-        </linearGradient>
-      </defs>
-      <rect width="480" height="320" fill={`url(#${uid}-bg)`} />
-      {variant === 0 && (
-        <g fill="none" stroke={`url(#${uid}-bone)`} strokeWidth="2.5" opacity="0.8">
-          <path d="M240 44v210M198 70c-42 14-52 54-38 94M282 70c42 14 52 54 38 94" />
-          {[0, 1, 2, 3, 4, 5].map((i) => (
-            <path key={i} d={`M${128 - i * 2} ${100 + i * 30}q112 ${22 + i} 224 0`} strokeWidth="1.4" opacity={0.42 + i * 0.06} />
-          ))}
-          <ellipse cx="238" cy="192" rx="62" ry="46" fill="#0a1828" stroke="#42d6c5" strokeOpacity="0.45" />
-          <path d="M176 188h124M214 166v52" stroke="#42d6c5" strokeOpacity="0.25" strokeDasharray="4 5" />
-        </g>
-      )}
-      {variant === 1 && (
-        <g fill="none" stroke={`url(#${uid}-bone)`} strokeWidth="2">
-          <ellipse cx="240" cy="160" rx="112" ry="128" strokeOpacity="0.75" />
-          <ellipse cx="240" cy="160" rx="92" ry="108" stroke="#42d6c5" strokeOpacity="0.5" />
-          <path d="M240 32v256M128 160h224" stroke="#8796aa" strokeDasharray="4 5" strokeOpacity="0.45" />
-          <ellipse cx="205" cy="145" rx="36" ry="62" fill="#0a1828" stroke="#4da3ff" strokeOpacity="0.55" />
-          <ellipse cx="275" cy="145" rx="36" ry="62" fill="#0a1828" stroke="#4da3ff" strokeOpacity="0.55" />
-          <circle cx="212" cy="165" r="7" fill="#f5b942" fillOpacity="0.7" stroke="none" />
-        </g>
-      )}
-      {variant === 2 && (
-        <g fill="none" stroke={`url(#${uid}-bone)`} strokeWidth="2.2">
-          <path d="M180 34c-24 70-16 160 18 252M300 34c24 70 16 160-18 252" />
-          <path d="M210 84c-20 80-6 140 20 186M270 84c20 80 6 140-20 186" strokeOpacity="0.55" />
-          <path d="M204 122c28-22 66-22 92 0M198 180c34-16 66-16 98 0M204 230c30-12 58-12 84 0" stroke="#42d6c5" strokeOpacity="0.4" />
-          <circle cx="272" cy="196" r="12" fill="#f5b942" fillOpacity="0.35" stroke="#f5b942" />
-          <circle cx="272" cy="196" r="22" stroke="#f5b942" strokeOpacity="0.35" />
-        </g>
-      )}
-      <g opacity="0.65" stroke="#8796aa" strokeWidth="2">
-        <path d="M14 14h12M14 14v12M466 14h-12M466 14v12M14 306h12M14 306v-12M466 306h-12M466 306v-12" />
-      </g>
-      <text x="16" y="302" fill="#f5b942" opacity="0.75" fontSize="9" fontFamily="ui-monospace,monospace">FICTIONAL IMAGE · NOT DIAGNOSTIC</text>
-    </svg>
+    <div className="grid h-full w-full place-items-center bg-[#050b14] px-6 text-center">
+      <div className="max-w-sm space-y-2">
+        <ScanLine className="mx-auto size-7 text-muted/70" />
+        <p className="text-xs font-semibold text-ink">
+          No image at {XRAY_DIR}/{file}
+        </p>
+        <p className="text-[11px] leading-relaxed text-muted">
+          Put <span className="font-mono text-ink/90">first.jpg</span>, <span className="font-mono text-ink/90">second.jpg</span> and{' '}
+          <span className="font-mono text-ink/90">third.jpg</span> in <span className="font-mono text-ink/90">public/assets/xray/</span>, then reload.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function HospitalXray({ image, index }: { image: (typeof XRAY_IMAGES)[number]; index: number }) {
+  // Keyed by file in the parent, so a failed image is retried when the user swipes away and back.
+  const [failed, setFailed] = useState(false)
+  if (failed) return <MissingXray file={image.file} />
+  return (
+    <img
+      src={`${XRAY_DIR}/${image.file}`}
+      alt={`Local X-ray image ${index + 1} of ${XRAY_IMAGES.length} — demonstration navigation, not diagnostic`}
+      data-xray={image.file}
+      draggable={false}
+      onError={() => setFailed(true)}
+      className="h-full w-full select-none object-contain"
+    />
   )
 }
 
@@ -144,15 +129,23 @@ export function HospitalImaging({ compact = false }: { compact?: boolean }) {
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [hint, setHint] = useState('')
-  const uid = useId().replace(/:/g, '')
   const hands = useSignatureHands()
-  const study = STUDIES[index % STUDIES.length]
+  const current = index % XRAY_IMAGES.length
+  const study = XRAY_IMAGES[current]
   const zoomPose = usePoseZoom((factor) => setZoom((z) => clamp(z * factor, 1, 3.6)), hands.ready)
   const gesture = zoomPose.gesture ? zoomPose.gesture.replace('_', ' ').toUpperCase() : null
 
+  const step = (dir: number) => {
+    setIndex((i) => (i + dir + XRAY_IMAGES.length) % XRAY_IMAGES.length)
+    setHint(dir > 0 ? 'NEXT IMAGE' : 'PREVIOUS IMAGE')
+  }
+
   useHorizontalSwipe(
     (dir) => {
-      setIndex((i) => (i + dir + STUDIES.length) % STUDIES.length)
+      // A new image means a fresh view: keep zoom/pan from drifting between studies.
+      setZoom(1)
+      setPan({ x: 0, y: 0 })
+      step(dir)
       setHint(dir > 0 ? 'SWIPE → NEXT IMAGE' : 'SWIPE ← PREVIOUS IMAGE')
     },
     hands.ready,
@@ -180,14 +173,14 @@ export function HospitalImaging({ compact = false }: { compact?: boolean }) {
       <ScreenHeader
         icon={<ScanLine className="size-3.5" />}
         title="Imaging · gesture view"
-        right={<Pill tone="warn">fictional</Pill>}
+        right={<Pill tone="warn">local file</Pill>}
       />
       <div className={cn('relative mt-2 overflow-hidden rounded-md border border-line/60 bg-black/50', compact && 'min-h-0 flex-1')} style={compact ? undefined : { height: 320 }}>
         <div
           className="absolute inset-0 transition-transform duration-150 ease-out"
           style={{ transform: `translate(${pan.x * 100}%, ${pan.y * 100}%) scale(${zoom})` }}
         >
-          <HospitalScan variant={study.variant} uid={uid} />
+          <HospitalXray key={study.file} image={study} index={current} />
         </div>
         <div className="pointer-events-none absolute left-3 top-3 flex flex-wrap gap-1.5">
           <PoseGuide zoom={zoomPose} />
@@ -200,11 +193,11 @@ export function HospitalImaging({ compact = false }: { compact?: boolean }) {
         <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/85 to-transparent px-3 pb-2 pt-8">
           <div>
             <p className="text-xs font-semibold text-ink">{study.title}</p>
-            <p className="font-mono text-[9px] text-muted">{study.modality} · image {index + 1}/{STUDIES.length} · {study.note}</p>
+            <p className="font-mono text-[9px] text-muted">Local asset · image {current + 1}/{XRAY_IMAGES.length} · not diagnostic</p>
           </div>
           <div className="flex items-center gap-1">
-            {STUDIES.map((s, i) => (
-              <span key={s.id} className={cn('h-1 rounded-full transition-all', i === index ? 'w-5 bg-accent' : 'w-1.5 bg-muted/40')} />
+            {XRAY_IMAGES.map((x, i) => (
+              <span key={x.id} className={cn('h-1 rounded-full transition-all', i === current ? 'w-5 bg-accent' : 'w-1.5 bg-muted/40')} />
             ))}
           </div>
         </div>
@@ -213,9 +206,24 @@ export function HospitalImaging({ compact = false }: { compact?: boolean }) {
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         <GestureChip active={!!hint}>{hint || (gesture ? `${gesture} · ACTIVE` : 'WAITING FOR HAND')}</GestureChip>
         <span className="text-[10px] text-muted">Open-palm swipe changes image · point-drag pans · pinch zooms in · open hand zooms out</span>
-        <button onClick={reset} className="ml-auto rounded border border-line px-1.5 py-0.5 text-[10px] text-muted hover:text-ink">Reset view</button>
+        <div className="ml-auto flex items-center gap-1">
+          <button aria-label="Previous image" onClick={() => step(-1)} className="rounded border border-line p-0.5 text-muted hover:text-ink">
+            <ChevronLeft className="size-3.5" />
+          </button>
+          <button aria-label="Next image" onClick={() => step(1)} className="rounded border border-line p-0.5 text-muted hover:text-ink">
+            <ChevronRight className="size-3.5" />
+          </button>
+          <button onClick={reset} className="rounded border border-line px-1.5 py-0.5 text-[10px] text-muted hover:text-ink">
+            Reset view
+          </button>
+        </div>
       </div>
-      {!compact && <ScreenNote>View navigation only. Opening this viewer and every mode action still requires the Intent Engine; the image is fictional and not diagnostic.</ScreenNote>}
+      {!compact && (
+        <ScreenNote>
+          View navigation only — every mode action still requires the Intent Engine. Images are local files you provide
+          (public/assets/xray), never fetched from a medical system, and shown for demonstration only.
+        </ScreenNote>
+      )}
     </div>
   )
 }

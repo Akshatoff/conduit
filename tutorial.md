@@ -113,7 +113,7 @@ gesture remains the emergency/cancel path. An Accessibility mode can additionall
 
 ## 4. Signature-screen gestures
 
-Signature screens are for examining something without touching it. Hospital uses a fictional image
+Signature screens are for examining something without touching it. Hospital uses local X-ray images you supply
 viewer; the other four environments show **two cameras**:
 
 - **CAM 1 · gesture** — the tracked camera with hand landmarks. This is the larger pane (~60%).
@@ -157,7 +157,7 @@ alternative if a fist is uncomfortable.
 - **Camera pills:** `live`, `starting`, `same camera` or `no camera`.
 - **Reset view** button restores 1×, centre and 0°.
 
-Zoom is limited to **1–5×** on the camera signature views (**3.6×** on the hospital sample image,
+Zoom is limited to **1–5×** on the camera signature views (**3.6×** on the hospital X-ray images,
 **1–4×** in Accessibility), with pan clamped so the image cannot be lost. Rotation is clamped to about **±60°** on the camera (the dashboard model is
 **±70°**).
 
@@ -178,7 +178,7 @@ Zoom is limited to **1–5×** on the camera signature views (**3.6×** on the h
 - **Digital controls:** Patient overview, Clinical records, Imaging viewer, Task checklist, Procedure
   step, Workstation timer, Request assistance.
 - **Physical:** Workstation/shared LED.
-- **Signature:** fictional imaging viewer — open-palm swipe changes image, point-drag pans, pinch zooms
+- **Signature:** local X-ray viewer (`public/assets/xray/first.jpg`, `second.jpg`, `third.jpg`) — open-palm swipe changes image, point-drag pans, pinch zooms
   in, still open hand zooms out. The image is explicitly fictional and not diagnostic.
 - No real patient record, medical device or hospital system is connected.
 
@@ -337,6 +337,7 @@ same selection and confirmation pipeline.
 | CAM 2 shows "same camera" | Only one browser video device is exposed. Connect/close apps using the second camera, then refresh in Settings. |
 | Gesture flips around | Improve lighting/background, keep one hand in frame, reduce landmark smoothing lag, and use the pose hold rather than quick flashes. |
 | Servo/LED do nothing | Hardware page → check the serial port and 9600 baud, close the Arduino Serial Monitor, press *Test link*. `UNKNOWN` means the board is not answering — never a fake success. |
+| Hospital X-ray panel asks for an image | Add `first.jpg`, `second.jpg` and `third.jpg` to `public/assets/xray/`, then reload. Swipe or use the ‹ › buttons to move between them. |
 
 ---
 

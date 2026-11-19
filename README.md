@@ -50,7 +50,11 @@ history and demonstration guide live behind one-click **Details** tabs instead o
 camera for space.
 
 Each environment also has a **Signature screen** (toolbar toggle, or open the dashboard). Hospital keeps
-a fictional image viewer. Every other environment shows **two cameras**:
+a local X-ray viewer you supply images for — drop `first.jpg`, `second.jpg` and `third.jpg` into
+[`public/assets/xray/`](public/assets/xray/README.md) and swipe between them with an open palm (or the
+prev/next buttons). The files are served at `/assets/xray/...` by Vite in dev, copied into `dist/` on build,
+and served straight from `public/assets/` by the backend, so you can add images without rebuilding while the
+Python backend is running. Every other environment shows **two cameras**:
 
 - **CAM 1 · gesture** — the camera MediaPipe is tracking, drawn with its hand landmarks. It takes the
   larger pane (~60%).
@@ -172,7 +176,7 @@ The full staged sequence is in [`docs/MODES.md`](docs/MODES.md#recommended-judge
 5. **Semiconductor:** change environment (camera keeps running). Advance a process stage, open the fictional
    wafer inspection, switch defect category, confirm a simulated record, then toggle **EQUIP LED** and
    **ACCESS**; show the mode indicators on the Twin page (`node` vs `ui`).
-6. **Signature screens:** open **Signature screen** in each environment. Hospital swipes fictional images.
+6. **Signature screens:** open **Signature screen** in each environment. Hospital swipes through the local X-ray images (`first.jpg`, `second.jpg`, `third.jpg`).
    Everywhere else you get CAM 1 (gesture tracking with landmarks) and CAM 2 (the object camera), each
    labelled. Point CAM 2 at the object and perform the gesture — pinch zoom, open-hand zoom-out, fist rotation, point-drag pan, large
    magnifier buttons — while CAM 1 stays raw. Food keeps both cameras visible and sets the timer by circling.
@@ -298,6 +302,7 @@ None of the automated tests needs a camera or an Arduino board.
 | Selection stays in *SELECTING* | See the reason line: `UNSTABLE` → steadier hand or lower stability threshold; `LOW_CONFIDENCE` → approach in a straight line, or lower the minimum confidence. |
 | Hand mirrored / wrong side | Coordinates are in selfie (mirrored) space; zones are drawn in the same space. |
 | Arduino *Disconnected* | `docs/HARDWARE.md` → troubleshooting (port in use, baud, Serial Monitor still open). Hardware mode never simulates an ack. |
+| Hospital X-ray shows “No image at …” | Add `first.jpg`, `second.jpg`, `third.jpg` to `public/assets/xray/` (see the README there) and reload. The backend serves that folder directly, so no rebuild is needed. |
 | Port 8000 busy | `uvicorn … --port 8001`, then set the URL in Settings → Connection. |
 
 ## Known limitations (honest status)

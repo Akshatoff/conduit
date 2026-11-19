@@ -51,6 +51,12 @@ def create_app(settings: Optional[AppSettings] = None, db_url: Optional[str] = N
     app.include_router(routes.router)
     app.include_router(ws.router)
 
+    # Source assets (e.g. the hospital X-ray images in public/assets/xray/) are mounted explicitly so
+    # they are served even when the UI bundle in dist/ is older than the files on disk.
+    assets = Path(os.getenv("CONDUIT_ASSETS", "public/assets"))
+    if assets.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets)), name="assets")
+
     dist = Path(os.getenv("CONDUIT_DIST", "dist"))
     if dist.exists():
         app.mount("/", StaticFiles(directory=str(dist), html=True), name="ui")

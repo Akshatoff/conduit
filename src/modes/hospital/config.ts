@@ -4,7 +4,7 @@ import type { ModeControl, ModeDefinition } from '../types'
 const controls: ModeControl[] = [
   { id: 'hospital.overview', device: 'hospital.overview', label: 'Patient overview', short: 'OVERVIEW', kind: 'digital', action: 'OPEN_OVERVIEW', hint: 'Bring the fictional patient summary to the front.' },
   { id: 'hospital.records', device: 'hospital.records', label: 'Clinical records', short: 'RECORDS', kind: 'digital', action: 'OPEN_RECORDS', hint: 'Scrolling record list (fictional entries).' },
-  { id: 'hospital.imaging', device: 'hospital.imaging', label: 'Imaging viewer', short: 'IMAGING', kind: 'digital', action: 'CYCLE_IMAGING', hint: 'Open the sample image; select again to cycle zoom.' },
+  { id: 'hospital.imaging', device: 'hospital.imaging', label: 'Imaging viewer', short: 'IMAGING', kind: 'digital', action: 'CYCLE_IMAGING', hint: 'Open the local X-ray images; select again to cycle zoom.' },
   { id: 'hospital.checklist', device: 'hospital.checklist', label: 'Task checklist', short: 'CHECKLIST', kind: 'digital', action: 'ADVANCE_CHECKLIST', hint: 'Mark the next preparation task complete.' },
   { id: 'hospital.procedure', device: 'hospital.procedure', label: 'Procedure step', short: 'PROCEDURE', kind: 'digital', action: 'NEXT_PROCEDURE', hint: 'Advance the demonstration procedure.' },
   { id: 'hospital.timer', device: 'hospital.timer', label: 'Workstation timer', short: 'TIMER', kind: 'digital', action: 'TOGGLE_TIMER', hint: 'Start or pause the non-clinical timer.' },
@@ -26,7 +26,7 @@ export const HOSPITAL_MODE: ModeDefinition = {
   features: [
     'Fictional patient overview with clearly labelled demo vitals',
     'Records and information panels',
-    'Sample imaging viewer with gesture-selected zoom',
+    'Local X-ray viewer (your own image files) with gesture-selected zoom',
     'Task checklist and procedure-step navigation',
     'Non-clinical workstation timer',
     'Simulated assistance request',
@@ -35,6 +35,7 @@ export const HOSPITAL_MODE: ModeDefinition = {
   ],
   safety: [
     'All patient information in this environment is fictional demonstration data.',
+    'The imaging panel shows local image files you provide in public/assets/xray — no patient record or medical imaging system is connected.',
     'No connection to real patient records, no diagnosis support, no medical device control.',
     'A research prototype for information navigation — not a certified healthcare product.',
     'Selecting a panel never executes without dwell, confidence and pinch confirmation.',
@@ -45,11 +46,11 @@ export const HOSPITAL_MODE: ModeDefinition = {
   workflow: {
     id: 'clinical-round',
     title: 'Bedside information round',
-    description: 'A fictional review sequence: identify the panel, read the summary, open the sample image, work through the checklist and log the handover step.',
+    description: 'A fictional review sequence: identify the panel, read the summary, open the local X-ray images, work through the checklist and log the handover step.',
     steps: [
       { id: 'summary', title: 'Open the patient overview', detail: 'Confirm which fictional patient is shown and read the demo summary.', controlId: 'hospital.overview' },
       { id: 'records', title: 'Check recent records', detail: 'Open the record list and note the latest fictional entry.', controlId: 'hospital.records' },
-      { id: 'imaging', title: 'Open the sample image', detail: 'Open the imaging panel and zoom once. The image is a placeholder.', controlId: 'hospital.imaging' },
+      { id: 'imaging', title: 'Open the X-ray images', detail: 'Open the imaging panel and zoom once. Images are local files from public/assets/xray.', controlId: 'hospital.imaging' },
       { id: 'checklist', title: 'Work the preparation checklist', detail: 'Complete the next task using deliberate selection + pinch.', controlId: 'hospital.checklist' },
       { id: 'procedure', title: 'Advance the procedure', detail: 'Move the demonstration procedure to the next step.', controlId: 'hospital.procedure' },
       { id: 'timer', title: 'Start the workstation timer', detail: 'A non-clinical example of a stateful control.', controlId: 'hospital.timer' },
@@ -59,7 +60,7 @@ export const HOSPITAL_MODE: ModeDefinition = {
   checklist: [
     'Confirm fictional patient identity on screen',
     'Review the demo observation summary',
-    'Open the sample imaging panel',
+    'Open the local X-ray panel and swipe once',
     'Check the demonstration task list',
     'Record a fictional handover note',
   ],
@@ -70,7 +71,7 @@ export const HOSPITAL_MODE: ModeDefinition = {
       { instruction: 'Hold a still open palm to activate the workstation.', expect: 'Interaction becomes active; the shared Intent Engine is running.' },
       { instruction: 'Move deliberately toward OVERVIEW and hold.', expect: 'Dwell and stability are evaluated before the panel can be selected.' },
       { instruction: 'Pinch to confirm.', expect: 'The pipeline validates intent, then the overview panel opens (digital ACK).' },
-      { instruction: 'Select RECORDS, then IMAGING and pinch.', expect: 'Each panel change passes through selection + confirmation.' },
+      { instruction: 'Select RECORDS, then IMAGING and pinch.', expect: 'Each panel change passes through selection + confirmation; the X-rays are local files.' },
       { instruction: 'Select CHECKLIST and pinching moves the task on.', expect: 'One deliberate action, one checklist step — no duplicates.' },
       { instruction: 'Sweep a flat hand across the row instead of dwelling.', expect: 'No panel opens. The log records TRANSIT with a reason.' },
       { instruction: 'Select TIMER or ASSIST to show stateful, non-clinical controls.', expect: 'Timer toggles / assistance request is clearly marked simulated.' },
