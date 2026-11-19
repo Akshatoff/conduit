@@ -21,9 +21,9 @@ export const hospitalReducer: ModeReducer = (state: ModeState, control: ModeCont
     case 'OPEN_RECORDS':
       return { state: { ...state, panel: 'records' }, status: 'confirmed', summary: `Opened the fictional record list for ${PATIENTS[state.patientIndex].id}` }
     case 'CYCLE_IMAGING': {
-      if (state.panel !== 'imaging') return { state: { ...state, panel: 'imaging' }, status: 'confirmed', summary: 'Opened the sample imaging panel (placeholder image)' }
+      if (state.panel !== 'imaging') return { state: { ...state, panel: 'imaging' }, status: 'confirmed', summary: 'Opened the local X-ray panel' }
       const zoom = (state.zoom + 1) % 3
-      return { state: { ...state, zoom }, status: 'confirmed', summary: `Sample imaging zoom ${zoom === 0 ? 'reset' : `set to ${zoom + 1}×`} (placeholder image)` }
+      return { state: { ...state, zoom }, status: 'confirmed', summary: `Local X-ray zoom ${zoom === 0 ? 'reset' : `set to ${zoom + 1}×`}` }
     }
     case 'ADVANCE_CHECKLIST': {
       if (state.checklistIndex >= def.checklist.length) {

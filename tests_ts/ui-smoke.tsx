@@ -230,6 +230,12 @@ async function main() {
   check('signature mode marks the camera view as transformed', S().signatureView.active === true, JSON.stringify(S().signatureView))
   await push(frameAt(0.5, 0.45))
   check('hospital signature view is visible', /Imaging · gesture view/.test(text()))
+  const firstXray = document.querySelector('img[data-xray]') as HTMLImageElement | null
+  check(
+    'hospital imaging loads the local X-ray file instead of a figure',
+    firstXray?.getAttribute('data-xray') === 'first.jpg' && firstXray?.getAttribute('src') === '/assets/xray/first.jpg' && /not diagnostic/.test(firstXray?.alt ?? ''),
+    firstXray?.outerHTML.slice(0, 140),
+  )
   const logBefore = S().log.length
   const devicesBefore = JSON.stringify(S().devices)
   for (let i = 0; i < 5; i++) await push(frameAt(0.5, 0.45, 'pinch'))
@@ -237,6 +243,13 @@ async function main() {
   await push(frameAt(0.3, 0.45))
   for (let i = 1; i <= 6; i++) await push(frameAt(0.3 + i * 0.09, 0.45))
   check('horizontal swipe changes the hospital image', /image 2\/3/.test(text()), text().slice(0, 300))
+  check('swipe advanced to second.jpg', (document.querySelector('img[data-xray]') as HTMLImageElement | null)?.getAttribute('data-xray') === 'second.jpg')
+  const secondXray = document.querySelector('img[data-xray]') as HTMLImageElement | null
+  await act(async () => {
+    secondXray?.dispatchEvent(new Event('error'))
+    await sleep(80)
+  })
+  check('a missing X-ray file shows a setup hint, not a broken image', /No image at \/assets\/xray\/second\.jpg/.test(text()), text().slice(0, 300))
   await push(frameAt(0.5, 0.45, 'point'))
   await push(frameAt(0.6, 0.52, 'point'))
   check('point-drag pans without issuing a command', /POINT-DRAG · PAN/.test(text()) && S().log.length === logBefore && JSON.stringify(S().devices) === devicesBefore)

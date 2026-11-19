@@ -248,7 +248,7 @@ export function WorkspacePage() {
                     <ScanLine className="size-4 text-accent" />
                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink">Signature screen</p>
                     <Pill tone="teal">{mode.shortName}</Pill>
-                    <span className="hidden text-[10px] text-muted sm:inline">{mode.id === 'hospital' ? 'fictional image view' : 'two-camera view · CAM 1 tracks gestures · CAM 2 is the object'}</span>
+                    <span className="hidden text-[10px] text-muted sm:inline">{mode.id === 'hospital' ? 'local X-ray image view' : 'two-camera view · CAM 1 tracks gestures · CAM 2 is the object'}</span>
                     <button
                       onClick={() => setScreen(false)}
                       aria-label="Close signature screen"
