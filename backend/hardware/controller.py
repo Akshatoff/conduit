@@ -7,7 +7,8 @@ One code path for simulation and real hardware:
 The digital-twin state (``confirmed_state``) is ONLY updated when the node's acknowledgement
 and an independent state read-back agree with the commanded state. Nothing is updated
 optimistically when a command is merely sent. In real-hardware mode an acknowledgement is
-never fabricated: if the ESP32 does not answer, the command is reported DISCONNECTED/FAILED.
+never fabricated: if the Arduino Uno does not answer over USB serial, the command is reported
+DISCONNECTED/FAILED.
 """
 from __future__ import annotations
 
@@ -16,7 +17,7 @@ import time
 from typing import Callable, Dict, Optional
 
 from .models import (ACTION_TO_STATE, DEVICE_SPECS, HARDWARE_SOURCES, CommandResult, CommandStatus, DeviceCommand)
-from .nodes import DeviceNode, ESP32Node, NodeError, SimulatedNode
+from .nodes import ArduinoSerialNode, DeviceNode, NodeError, SimulatedNode
 from .validation import validate_command
 
 EmitFn = Callable[[str, dict], None]
@@ -30,14 +31,14 @@ class DeviceController:
     def __init__(
         self,
         sim: Optional[SimulatedNode] = None,
-        hw: Optional[ESP32Node] = None,
+        hw: Optional[ArduinoSerialNode] = None,
         mode: str = "simulation",
         emit: Optional[EmitFn] = None,
         min_confidence: float = 0.0,
         command_timeout_s: float = 3.0,
     ) -> None:
         self.sim = sim or SimulatedNode()
-        self.hw = hw or ESP32Node()
+        self.hw = hw or ArduinoSerialNode()
         self.mode = mode
         self.emit: EmitFn = emit or (lambda t, d: None)
         self.min_confidence = min_confidence
@@ -71,7 +72,7 @@ class DeviceController:
             "node": self.active_node.name,
             "simulated": self.mode == "simulation",
             "devices": list(self.twin.values()),
-            "hardware": {"host": self.hw.host, "port": self.hw.port, "timeout_s": self.hw.timeout_s},
+            "hardware": {"port": self.hw.port, "baud": self.hw.baud, "timeout_s": self.hw.timeout_s},
         }
 
     @property
@@ -97,8 +98,9 @@ class DeviceController:
         for did in self.twin:
             self._emit_device_state(did, f"Mode switched to {mode}")
 
-    def configure_hardware(self, host: str, port: int, timeout_s: float) -> None:
-        self.hw.configure(host, port, timeout_s)
+    def configure_hardware(self, port: str, baud: int, timeout_s: float) -> None:
+        """Point the controller at a serial port (e.g. COM3) and baud rate (9600 for the Uno)."""
+        self.hw.configure(port, baud, timeout_s)
 
     async def refresh(self) -> bool:
         """Health-check the active node and read back device states (device registration + heartbeat)."""

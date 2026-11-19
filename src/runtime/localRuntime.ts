@@ -32,7 +32,7 @@ function loadSettings(): AppSettings {
     const raw = localStorage.getItem(SETTINGS_KEY)
     if (!raw) return d
     const s = JSON.parse(raw)
-    return { ...d, ...s, esp32: { ...d.esp32, ...s.esp32 }, camera: { ...d.camera, ...s.camera }, privacy: { ...d.privacy, ...s.privacy, store_video: false }, intent: { ...d.intent, ...s.intent, weights: { ...d.intent.weights, ...s.intent?.weights }, gestures: { ...d.intent.gestures, ...s.intent?.gestures } } }
+    return { ...d, ...s, arduino: { ...d.arduino, ...s.arduino }, camera: { ...d.camera, ...s.camera }, privacy: { ...d.privacy, ...s.privacy, store_video: false }, intent: { ...d.intent, ...s.intent, weights: { ...d.intent.weights, ...s.intent?.weights }, gestures: { ...d.intent.gestures, ...s.intent?.gestures } } }
   } catch {
     return d
   }
@@ -71,7 +71,7 @@ export class LocalRuntime implements Runtime {
 
   constructor() {
     this.controller = new DeviceController(this.settings.hardware_mode, (t, d) => this.onDeviceEvent(t, d), this.settings.intent.min_confidence)
-    this.controller.configureHardware(this.settings.esp32.host, this.settings.esp32.port, this.settings.esp32.timeout_s)
+    this.controller.configureHardware(this.settings.arduino.port, this.settings.arduino.baud, this.settings.arduino.timeout_s)
     this.engine = new IntentEngine(this.settings.intent, this.controller.deviceStates)
     this.baseline = new BaselineController(this.controller.deviceStates)
     this.video = document.createElement('video')
@@ -91,10 +91,10 @@ export class LocalRuntime implements Runtime {
       // mean a mode dashboard is loaded (the app opens on the environment-selection screen).
       activeMode: null,
       settings: this.settings, zones: this.settings.intent.zones, interactionMode: this.settings.interaction_mode, hardwareMode: this.settings.hardware_mode,
-      hardwareInfo: this.settings.esp32, devices: { ...this.controller.twin }, analytics: this.analytics.summary(), link: 'open',
+      hardwareInfo: this.settings.arduino, devices: { ...this.controller.twin }, analytics: this.analytics.summary(), link: 'open',
     })
     window.setInterval(() => {
-      if (this.controller.mode === 'hardware' && this.controller.hw.host) void this.controller.refresh()
+      if (this.controller.mode === 'hardware' && this.controller.hw.port) void this.controller.refresh()
     }, 2000)
     void this.listCameras()
     pushLog({ channel: 'system', level: 'info', title: 'Browser runtime ready', detail: 'Python backend not detected — running the engine, simulation and analytics locally in this tab.' })
@@ -471,7 +471,12 @@ export class LocalRuntime implements Runtime {
     this.persist()
     await this.controller.setMode(m)
     set({ hardwareMode: m, settings: this.settings, devices: { ...this.controller.twin } })
-    if (m === 'hardware' && !this.settings.esp32.host) set({ notice: 'Enter the ESP32 IP address in Settings → Hardware, then press “Test connection”.' })
+    if (m === 'hardware' && !this.settings.arduino.port) set({ notice: 'Enter the Arduino serial port (e.g. COM3) in Settings → Hardware and run the Python backend.' })
+  }
+
+  async listSerialPorts(): Promise<{ device: string; description: string }[]> {
+    // A browser cannot enumerate hardware serial ports; only the Python backend can.
+    return []
   }
 
   async connectHardware() {
@@ -494,12 +499,12 @@ export class LocalRuntime implements Runtime {
     this.persist()
     this.engine.setConfig(s.intent)
     this.controller.minConfidence = s.intent.min_confidence
-    this.controller.configureHardware(s.esp32.host, s.esp32.port, s.esp32.timeout_s)
+    this.controller.configureHardware(s.arduino.port, s.arduino.baud, s.arduino.timeout_s)
     this.smoother.alpha = s.camera.smoothing_alpha
     if (modeChanged) await this.controller.setMode(s.hardware_mode)
     else if (s.hardware_mode === 'hardware') await this.controller.refresh()
     if (s.interaction_mode !== get().interactionMode) await this.setInteractionMode(s.interaction_mode)
-    set({ settings: s, zones: s.intent.zones, hardwareMode: s.hardware_mode, hardwareInfo: s.esp32, devices: { ...this.controller.twin }, notice: 'Settings saved.' })
+    set({ settings: s, zones: s.intent.zones, hardwareMode: s.hardware_mode, hardwareInfo: s.arduino, devices: { ...this.controller.twin }, notice: 'Settings saved.' })
   }
 
   private persist() {

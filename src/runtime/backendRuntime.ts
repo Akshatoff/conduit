@@ -74,7 +74,7 @@ export class BackendRuntime implements Runtime {
 
   private async loadSettings() {
     const s = await this.safe(() => this.api<AppSettings>('/api/settings'))
-    if (s) set({ settings: s, zones: s.intent.zones, interactionMode: s.interaction_mode, hardwareMode: s.hardware_mode, hardwareInfo: s.esp32 })
+    if (s) set({ settings: s, zones: s.intent.zones, interactionMode: s.interaction_mode, hardwareMode: s.hardware_mode, hardwareInfo: s.arduino })
   }
 
   private async loadCameras() {
@@ -120,7 +120,7 @@ export class BackendRuntime implements Runtime {
     const d = env.data
     switch (env.type) {
       case 'snapshot': {
-        const dev = d.devices as { mode: 'simulation' | 'hardware'; devices: DeviceTwin[]; hardware: { host: string; port: number; timeout_s: number } }
+        const dev = d.devices as { mode: 'simulation' | 'hardware'; devices: DeviceTwin[]; hardware: { port: string; baud: number; timeout_s: number } }
         const workspace = typeof d.workspace_mode === 'string' ? d.workspace_mode : get().settings.workspace_mode
         set({
           camera: d.camera as CameraState,
@@ -246,14 +246,19 @@ export class BackendRuntime implements Runtime {
   }
   async connectHardware() {
     const r = await this.safe(() => this.api<{ connected: boolean }>('/api/hardware/connect', 'POST'))
-    if (r) set({ notice: r.connected ? 'Node reachable — device states read back.' : 'Node not reachable. In hardware mode no acknowledgement is ever simulated.' })
+    if (r) set({ notice: r.connected ? 'Arduino reachable — device states read back.' : 'Arduino not reachable. In hardware mode no acknowledgement is ever simulated.' })
+  }
+
+  async listSerialPorts(): Promise<{ device: string; description: string }[]> {
+    const r = await this.safe(() => this.api<{ ports: { device: string; description: string }[] }>('/api/hardware/ports'))
+    return r?.ports ?? []
   }
   async simulateFault(offline: boolean) {
     await this.safe(() => this.api('/api/hardware/simulate_fault', 'POST', { offline }))
   }
   async applySettings(s: AppSettings) {
     const r = await this.safe(() => this.api<AppSettings>('/api/settings', 'PUT', s))
-    if (r) set({ settings: r, zones: r.intent.zones, hardwareMode: r.hardware_mode, interactionMode: r.interaction_mode, hardwareInfo: r.esp32, notice: 'Settings saved.' })
+    if (r) set({ settings: r, zones: r.intent.zones, hardwareMode: r.hardware_mode, interactionMode: r.interaction_mode, hardwareInfo: r.arduino, notice: 'Settings saved.' })
   }
   async refreshAnalytics() {
     const s = await this.safe(() => this.api<AnalyticsSummary>('/api/analytics/summary'))

@@ -1,91 +1,163 @@
-# CONDUIT — Hardware demonstration setup
+# Hardware — Arduino Uno node (USB serial)
 
-> **Isolated, low-voltage demonstration electronics only.** Never connect Conduit to mains power, real door
-> locks / security systems, medical equipment or industrial machinery. This is a prototype, not a certified system.
+Conduit has one physical build: an **Arduino Uno** connected to the machine running the Conduit
+backend by **USB serial**. There is **no motor, fan or other actuator** — two isolated low-voltage
+outputs only:
 
-## Bill of materials
-
-| Item | Notes |
-|---|---|
-| ESP32 dev board (ESP32-WROOM-32 "DevKit") | USB powered |
-| 1 × LED + 220 Ω resistor | *Lighting* |
-| 1 × small 5 V DC fan (≤ 200 mA) | *Ventilation* |
-| 1 × NPN transistor (2N2222 / BC337) + 1 kΩ base resistor **or** logic-level N-MOSFET (2N7000 / IRLZ44N) | fan driver |
-| 1 × 1N4007 / 1N5819 diode | flyback diode across the fan — **required** |
-| 1 × SG90 micro servo | *Access control*; moves a small **model** latch (cardboard / 3D print) |
-| Breadboard, jumper wires, 5 V supply capable of ≥ 1 A for fan + servo (common GND with ESP32) | |
-
-## Wiring
-
-| Function | ESP32 pin | Circuit |
-|---|---|---|
-| Lighting | GPIO 25 | GPIO → 220 Ω → LED anode; LED cathode → GND |
-| Ventilation | GPIO 26 | GPIO → 1 kΩ → NPN base; emitter → GND; fan(−) → collector; fan(+) → 5 V; 1N4007 across fan (cathode to +5 V) |
-| Access (servo) | GPIO 27 | servo signal ← GPIO 27; servo V+ ← 5 V; servo GND ← GND (shared) |
-
-Power the fan and servo from the external 5 V rail rather than the ESP32 3V3 pin. Join all grounds. Do not drive the
-fan directly from a GPIO.
-
-Servo positions: `SERVO_LOCKED_DEG = 10`, `SERVO_UNLOCKED_DEG = 100` in the sketch — adjust to your model latch.
-
-## Flashing
-
-1. Arduino IDE → install the **ESP32** board package.
-2. Library Manager → install **ArduinoJson (v7)** and **ESP32Servo**.
-3. Open `firmware/conduit_node.ino`, set `WIFI_SSID` / `WIFI_PASS`.
-4. Board: *ESP32 Dev Module* → Upload. Open Serial Monitor at 115200 baud; note the printed **IP address**.
-5. In Conduit → *System Settings → Simulation & ESP32*: enter the IP, switch Simulation off, Save, *Test connection*.
-
-## Protocol (HTTP + JSON)
-
-```
-GET  /health    -> {"status":"ok","firmware":"conduit-node-1.0","uptime_s":123,"failsafe_ms":8000}
-GET  /info      -> {"node":"conduit-esp32","devices":["lighting","ventilation","access"]}
-GET  /state     -> {"devices":{"lighting":"ON","ventilation":"OFF","access":"LOCKED"}}
-POST /command   <- {"command_id":"…","device":"lighting","action":"ON","source":"conduit_intent_engine"}
-                -> {"command_id":"…","device":"lighting","status":"ACKNOWLEDGED","actual_state":"ON"}
-```
-
-* Actions: `ON`/`OFF` (lighting, ventilation), `LOCK`/`UNLOCK` (access).
-* **Idempotent:** the node keeps the last 16 `command_id`s; a repeat returns the stored acknowledgement without moving anything.
-* **Source filter:** only `conduit_intent_engine` and `manual_test` may drive outputs; `baseline_gesture` is refused on the node too.
-* **Acknowledgement is sent after the output was applied** (the servo waits for its settle time).
-* The host additionally **reads `/state` back** and only then marks the digital-twin state `CONFIRMED`.
-* **Failsafe:** the host polls `/health` every ~2 s. If the node sees no request for 8 s it returns LED off, fan off,
-  latch **LOCKED** and keeps that state until the next command.
-* Command lifecycle shown in the UI: `SENT → ACKNOWLEDGED → CONFIRMED` (or `FAILED` / `DISCONNECTED`). In hardware
-  mode a missing acknowledgement is *never* simulated.
-
-## Quick checks without the UI
-
-```powershell
-curl http://<ESP32-IP>/health
-curl http://<ESP32-IP>/state
-curl -X POST http://<ESP32-IP>/command -d "{\"command_id\":\"t1\",\"device\":\"lighting\",\"action\":\"ON\",\"source\":\"manual_test\"}"
-```
-
-## Troubleshooting hardware
-
-| Symptom | Check |
-|---|---|
-| UI says *Disconnected* / states `UNKNOWN` | IP correct? Same Wi-Fi network? PC firewall? `curl /health` works? |
-| Fan does not spin | transistor orientation, shared GND, fan current, 5 V rail |
-| ESP32 resets when servo moves | servo powered from the ESP32 — use an external 5 V supply |
-| Servo jitters | brown-out; add a 470 µF capacitor across the servo supply |
-| Browser runtime can't reach ESP32 | page is served over **https** (mixed content). Use the Python backend or open over http |
-
-## Outputs per operational environment
-
-The same three low-voltage outputs are reused, with mode-specific meaning. Nothing new is required.
-
-| Environment | `lighting` (LED) | `ventilation` (fan) | `access` (SG90 latch) |
+| Device id | Function | Output | Meaning |
 |---|---|---|---|
-| Hospital | workstation lamp | — | — |
-| Semiconductor | equipment status indicator | ventilation indicator | model access mechanism |
-| Industrial | equipment indicator | — | service access latch |
-| Food processing | pass lamp | — | — |
-| Accessibility | desk lamp | — | — |
+| `lighting` | Lighting | LED on **D3** | `ON` / `OFF` |
+| `access` | Access control | SG90 servo on **D9** | `LOCKED` = 0°, `UNLOCKED` = 90° |
 
-A mode may leave an output unused. All outputs still go through `validate → SENT → ACK → state
-read-back → CONFIRMED`; the twin never infers success from a digital mode action. Digital controls
-(such as opening a patient panel) are handled by the mode layer and never reach this node.
+Everything else in the app (devices, zones, analytics, validation) uses these two ids. There is no
+`ventilation` device: the earlier fan/motor has been removed from the firmware, backend, UI, tests
+and docs.
+
+> **Safety.** Isolated low-voltage demonstration only. Never connect this to mains power, real door
+> locks, medical devices, machinery or anything safety-critical. Power the servo from its own 5 V
+> supply with a common ground. A fan/motor, if you ever add one, needs a transistor/MOSFET driver —
+> never an Arduino pin.
+
+---
+
+## 1. Bill of materials
+
+| Part | Role |
+|---|---|
+| Arduino Uno (or Uno-compatible) + USB cable | the node |
+| 1 × LED + 220 Ω resistor | `lighting` |
+| 1 × SG90 (or similar 5 V hobby servo) | `access` model latch |
+| Breadboard, jumper wires | wiring |
+| 5 V supply (≥ 500 mA) for the servo | avoids brown-outs/resets |
+
+## 2. Wiring
+
+| Function | Uno pin | Circuit |
+|---|---|---|
+| LED | **D3** | D3 → 220 Ω → LED anode; LED cathode → GND |
+| Servo signal | **D9** | servo signal → D9 |
+| Servo power | — | servo V+ → external 5 V; servo GND → **common ground with the Uno** |
+
+Do not power the servo from the Uno's 5 V pin if the board resets when it moves. The servo draws
+current spikes; the external rail plus a shared ground fixes it.
+
+## 3. Flash the firmware
+
+Sketch: [`firmware/conduit_uno/conduit_uno.ino`](../firmware/conduit_uno/conduit_uno.ino)
+
+1. Arduino IDE → *Tools → Board → **Arduino Uno*** and the correct port.
+2. No external libraries beyond the bundled **Servo** library.
+3. Upload.
+4. The board prints `READY conduit-uno-1.0` at **9600 baud**.
+5. **Close the Arduino Serial Monitor** before starting Conduit — a serial port can only be open in
+   one program at a time.
+
+### Manual bench test (Serial Monitor, 9600 baud)
+
+```
+PING           -> PONG conduit-uno-1.0 <uptime_ms>
+STATE?         -> STATE lighting=OFF access=LOCKED servo=0
+LED_ON         -> ACK: LED ON
+LED_OFF        -> ACK: LED OFF
+SERVO          -> ACK: SERVO 90          (toggles 0 <-> 90)
+SERVO 0        -> ACK: SERVO 0 (LOCKED)
+```
+
+These short commands are for the Serial Monitor only. Conduit itself uses the structured protocol
+below, which carries a command id so a repeated message is never actuated twice.
+
+## 4. Serial protocol (9600 baud, one line per command)
+
+Host → node:
+
+```
+PING
+INFO
+STATE?
+CMD <command_id> <device> <action> <source>
+```
+
+Node → host:
+
+```
+READY conduit-uno-1.0
+PONG conduit-uno-1.0 <uptime_ms>
+INFO lighting,access
+STATE lighting=ON access=LOCKED servo=0
+ACK <command_id> <device> ACKNOWLEDGED|REJECTED <state> [detail]
+ERR <detail>
+```
+
+* Devices: `lighting` (`ON`/`OFF`), `access` (`LOCK`/`UNLOCK`).
+* Sources that may drive outputs: `conduit_intent_engine`, `manual_test`. A `baseline_gesture`
+  command is refused by the firmware as defence in depth.
+* The controller verifies that the echoed `command_id` matches the command it sent.
+* After the acknowledgement the controller sends `STATE?` and only marks the twin `CONFIRMED` when
+  the read-back agrees with the requested state.
+
+### Safety behaviour in the firmware
+
+* **Idempotent:** the last 8 command ids are remembered; a repeated id replays the stored answer and
+  never actuates again.
+* **Failsafe:** if the host is silent for **5 s** (heartbeat every ~2 s) the LED switches off and the
+  servo returns to 0° (`LOCKED`).
+* **No autonomous blink**: the LED only reflects a command or the failsafe.
+* **Validation:** unknown device, invalid action or a forbidden source is answered `REJECTED` and the
+  outputs are left untouched.
+
+## 5. Configure Conduit
+
+1. Start the backend (`scripts\run.bat` on Windows) — the browser alone cannot open a serial port.
+2. *System Settings → Simulation & Arduino Uno*:
+   * **Serial port**: `COM3` (Windows), `/dev/ttyACM0` (Linux) or `/dev/cu.usbmodem…` (macOS).
+     Use *Find ports* to list what the backend can see.
+   * **Baud**: `9600` (must match the sketch).
+   * **Timeout**: 2 s is fine; servo moves add ~350 ms.
+3. Save → switch **Simulation mode** off → *Test connection*.
+4. Open **Hardware** in the navigation: LED and servo bench, or **Digital Twin** for the full
+   ACK + read-back lifecycle.
+
+Environment overrides: `CONDUIT_SERIAL_PORT`, `CONDUIT_SERIAL_BAUD` (see `.env.example`).
+
+## 6. The Hardware page (bench)
+
+`Hardware` in the top navigation is the one place to exercise each physical output individually:
+
+* **LED · D3** — *LED ON* / *LED OFF*.
+* **Servo · D9** — *Rotate to 90°* (`UNLOCK`) / *Rotate to 0°* (`LOCK`), with an arm graphic showing
+  the confirmed angle.
+* Each press is a `manual_test` command through the normal controller: validate → `SENT` → `ACK` →
+  `STATE?` read-back → `CONFIRMED`. The card shows the last ACK, the command id and any error.
+* Simulation/hardware toggle and *Test link* live on the same page.
+* Mode screens never use this page — they go through the Intent Engine only.
+
+## 7. What each environment calls the outputs
+
+| Environment | LED (`lighting`) | Servo (`access`) |
+|---|---|---|
+| Hospital | room-status indicator | supply-cabinet latch |
+| Semiconductor | equipment status indicator | model access mechanism |
+| Industrial | line-status lamp | demo access barrier |
+| Food processing | station-status lamp | sample-hatch latch |
+| Accessibility | adaptive indicator | adaptive latch |
+
+Nothing here is a real interlock, indicator of clinical state or safety device.
+
+## 8. Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `Cannot open serial port 'COM3'` | port in use (Serial Monitor, another app) or wrong name; replug the board |
+| `No reply to PING` | sketch not running / wrong baud; close the Serial Monitor and re-flash |
+| Twin stuck `DISCONNECTED` / `UNKNOWN` | cable, port, baud; then *Test link*. No acknowledgement is ever invented |
+| UNO resets when the servo moves | power the servo from a separate 5 V supply, common ground |
+| Servo jitters but does not hold | insufficient supply current; add a capacitor across the servo supply |
+| LED never lights | polarity, 220 Ω resistor, correct pin D3 |
+| Browser runtime shows hardware as unavailable | start the Python backend; browsers cannot open a serial port |
+| Every command is `REJECTED` | device/action mismatch — check the `detail` field in the log |
+
+## 9. Automated tests without hardware
+
+`python -m pytest -q` exercises the full controller against a fake serial transport that speaks the
+real line protocol (acknowledgement, wrong command id, silence, rejection, state mismatch). No board
+is required, and a missing port can only ever produce `DISCONNECTED` — never a fabricated ACK.

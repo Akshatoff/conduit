@@ -4,7 +4,7 @@
 import { toggleAction } from './config'
 import type { CommandRequest, InteractionInput } from './types'
 
-export const BASELINE_MAPPING: Record<string, string> = { open_palm: 'lighting', pinch: 'ventilation', fist: 'access' }
+export const BASELINE_MAPPING: Record<string, string> = { open_palm: 'lighting', fist: 'access' }
 
 export class BaselineController {
   private prev = 'none'

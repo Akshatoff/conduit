@@ -22,7 +22,7 @@ class Zone(BaseModel):
     y1: float
     # Optional mode-layer metadata (ignored by the intent maths, used by the UI).
     action: Optional[str] = None      # explicit command action; None = toggle the device state
-    kind: str = "physical"            # "physical" (ESP32 node) or "digital" (mode UI control)
+    kind: str = "physical"            # "physical" (Arduino Uno node) or "digital" (mode UI control)
     hint: str = ""                    # short helper text for the mode dashboard
 
     def contains(self, x: float, y: float, margin: float = 0.0) -> bool:
@@ -35,9 +35,8 @@ class Zone(BaseModel):
 
 def default_zones() -> List[Zone]:
     return [
-        Zone(id="lighting", label="Lighting", device="lighting", x0=0.05, y0=0.10, x1=0.33, y1=0.55),
-        Zone(id="ventilation", label="Ventilation", device="ventilation", x0=0.36, y0=0.10, x1=0.64, y1=0.55),
-        Zone(id="access", label="Access control", device="access", x0=0.67, y0=0.10, x1=0.95, y1=0.55),
+        Zone(id="lighting", label="Lighting", device="lighting", x0=0.05, y0=0.10, x1=0.45, y1=0.55),
+        Zone(id="access", label="Access control", device="access", x0=0.55, y0=0.10, x1=0.95, y1=0.55),
     ]
 
 

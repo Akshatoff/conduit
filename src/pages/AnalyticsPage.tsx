@@ -15,7 +15,7 @@ const C_COND = '#42d6c5'
 const tooltipStyle = { background: '#111c2e', border: '1px solid #233450', borderRadius: 8, fontSize: 12, color: '#eaf1fa' }
 
 const SCENARIOS = {
-  intended: ['Select lighting + pinch confirm', 'Select ventilation + pinch confirm', 'Select access + pinch confirm'],
+  intended: ['Select lighting + pinch confirm', 'Select access + pinch confirm', 'Dwell, then cancel with a fist'],
   unintended: ['Wave across the frame', 'Quick swipe through zones', 'Reach for an object past the controls', 'Scratch face / hand adjust', 'Hand rests in zone, no intent', 'Accidental pinch / fist'],
 }
 

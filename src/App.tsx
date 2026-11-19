@@ -2,6 +2,7 @@ import { Loader2 } from 'lucide-react'
 import { useEffect } from 'react'
 import { Layout } from './components/Layout'
 import { AnalyticsPage } from './pages/AnalyticsPage'
+import { HardwarePage } from './pages/HardwarePage'
 import { LivePage } from './pages/LivePage'
 import { ModeSelectPage } from './pages/ModeSelectPage'
 import { SettingsPage } from './pages/SettingsPage'
@@ -38,6 +39,7 @@ export default function App() {
           {page === 'workspace' && <WorkspacePage />}
           {page === 'live' && <LivePage />}
           {page === 'twin' && <TwinPage />}
+          {page === 'hardware' && <HardwarePage />}
           {page === 'analytics' && <AnalyticsPage />}
           {page === 'settings' && <SettingsPage />}
         </>

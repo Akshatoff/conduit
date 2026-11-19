@@ -1,4 +1,4 @@
-import { BarChart3, Box, Camera, CameraOff, Cloud, Hand, LayoutGrid, Layers, Server, Settings2, X } from 'lucide-react'
+import { BarChart3, Box, Camera, CameraOff, Cloud, Hand, LayoutGrid, Layers, Server, Settings2, Usb, X } from 'lucide-react'
 import { useEffect, type ReactNode } from 'react'
 import { getMode } from '../modes/registry'
 import { useConduit, type Page } from '../store'
@@ -10,6 +10,7 @@ const NAV: { id: Page; label: string; icon: ReactNode }[] = [
   { id: 'workspace', label: 'Workspace', icon: <Layers className="size-[18px]" /> },
   { id: 'live', label: 'Live Interaction', icon: <Hand className="size-[18px]" /> },
   { id: 'twin', label: 'Digital Twin', icon: <Box className="size-[18px]" /> },
+  { id: 'hardware', label: 'Hardware', icon: <Usb className="size-[18px]" /> },
   { id: 'analytics', label: 'Analytics', icon: <BarChart3 className="size-[18px]" /> },
   { id: 'settings', label: 'System Settings', icon: <Settings2 className="size-[18px]" /> },
 ]
@@ -116,7 +117,7 @@ export function Layout({ children }: { children: ReactNode }) {
       </footer>
 
       {/* mobile bottom navigation */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-6 border-t border-line bg-bg/95 backdrop-blur md:hidden" aria-label="Main">
+      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-7 border-t border-line bg-bg/95 backdrop-blur md:hidden" aria-label="Main">
         {NAV.map((n) => (
           <button key={n.id} onClick={() => go(n.id)} className={cn('flex flex-col items-center gap-1 py-2.5 text-[10px] font-medium', page === n.id ? 'text-accent' : 'text-muted')}>
             {n.icon}

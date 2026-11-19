@@ -83,9 +83,11 @@ class FaultRequest(BaseModel):
 
 
 # ------------------------------------------------------------------ settings
-class Esp32Settings(BaseModel):
-    host: str = ""
-    port: int = 80
+class ArduinoSettings(BaseModel):
+    """USB serial link to the Arduino Uno node (e.g. COM3 / /dev/ttyACM0 at 9600 baud)."""
+
+    port: str = ""
+    baud: int = Field(9600, ge=1200, le=115200)
     timeout_s: float = Field(2.0, ge=0.2, le=10.0)
 
 
@@ -106,7 +108,7 @@ class AppSettings(BaseModel):
     workspace_mode: str = Field("hospital", max_length=40)   # active operational environment
     hardware_mode: Literal["simulation", "hardware"] = "simulation"
     interaction_mode: Literal["baseline", "conduit"] = "conduit"
-    esp32: Esp32Settings = Field(default_factory=Esp32Settings)
+    arduino: ArduinoSettings = Field(default_factory=ArduinoSettings)
     camera: CameraSettings = Field(default_factory=CameraSettings)
     privacy: PrivacySettings = Field(default_factory=PrivacySettings)
     intent: IntentConfig = Field(default_factory=IntentConfig)

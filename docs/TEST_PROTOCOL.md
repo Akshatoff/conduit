@@ -47,11 +47,11 @@ Perform the *same list* in both modes. Randomise the order once and keep it.
 | ID | Scenario | Mode B procedure |
 |---|---|---|
 | D1 | Toggle lighting | open palm (hold still) → move steadily into *Lighting* → hold → pinch |
-| D2 | Toggle ventilation | same, *Ventilation* zone |
+| D2 | Rotate the servo | same, *Access control* zone |
 | D3 | Toggle access control | same, *Access control* zone |
 | D4 | Toggle a device, then change mind | enter zone, hold, **fist** → expect cancel (record as *unintended*: nothing should change) |
 
-Mode A procedure for D1–D3: show the mapped gesture (open palm = lighting, pinch = ventilation, fist = access).
+Mode A procedure for D1–D3: show the mapped gesture (open palm = lighting, fist = access). There are two physical outputs: an LED and a servo.
 
 **Unintended (accidental)**
 

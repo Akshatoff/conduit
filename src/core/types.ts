@@ -13,7 +13,7 @@ export interface Zone {
   y1: number
   /** Explicit command action. Omitted = toggle the device state (classic behaviour). */
   action?: string | null
-  /** `physical` = ESP32 node, `digital` = mode-layer UI control (never hardware). */
+  /** `physical` = Arduino Uno node, `digital` = mode-layer UI control (never hardware). */
   kind?: 'physical' | 'digital'
   /** Short helper text shown on the mode dashboard / camera overlay. */
   hint?: string
@@ -51,7 +51,7 @@ export interface AppSettings {
   workspace_mode: string
   hardware_mode: 'simulation' | 'hardware'
   interaction_mode: 'conduit' | 'baseline'
-  esp32: { host: string; port: number; timeout_s: number }
+  arduino: { port: string; baud: number; timeout_s: number }
   camera: { index: number; width: number; height: number; smoothing_alpha: number }
   privacy: { preview_stream: boolean; store_video: boolean; log_landmarks: boolean }
   intent: IntentConfig

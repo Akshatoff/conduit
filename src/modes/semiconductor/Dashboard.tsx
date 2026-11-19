@@ -1,4 +1,4 @@
-import { CheckSquare, ClipboardCheck, Factory, Fan, Layers, ScanSearch, ServerCog, ShieldCheck } from 'lucide-react'
+import { CheckSquare, ClipboardCheck, Factory, Layers, ScanSearch, ServerCog, ShieldCheck } from 'lucide-react'
 import { ModePanel, WorkflowRail, useModeState } from '../../components/mode/DashboardKit'
 import { WaferInspector } from '../../components/mode/signature'
 import { Card, Meter, Pill } from '../../components/ui'
@@ -9,8 +9,8 @@ import { CHECKLIST, DEFECT_CATEGORIES, EQUIPMENT, FAB_NOTICE, PROCESS_STAGES } f
 
 function EquipmentCard({ equipment }: { equipment: (typeof EQUIPMENT)[number] }) {
   const devices = useConduit((s) => s.devices)
-  const device = equipment.indicator.startsWith('LED') ? devices.lighting : equipment.indicator.startsWith('Fan') ? devices.ventilation : devices.access
-  const Icon = equipment.indicator.startsWith('LED') ? Factory : equipment.indicator.startsWith('Fan') ? Fan : ServerCog
+  const device = equipment.indicator.startsWith('LED') ? devices.lighting : devices.access
+  const Icon = equipment.indicator.startsWith('LED') ? Factory : ServerCog
   return (
     <div className="rounded-lg border border-line/70 bg-bg/40 p-2.5">
       <div className="flex items-center gap-2">
@@ -153,7 +153,7 @@ export function SemiconductorDashboard() {
             </div>
             <p className="mt-2 flex items-start gap-1.5 text-[10px] leading-snug text-muted">
               <ShieldCheck className="mt-px size-3.5 shrink-0 text-teal" />
-              Indicator states are confirmed only after the node acknowledges and state is read back. A fan is not a ventilation system and a servo is not a door interlock.
+              Indicator states are confirmed only after the node acknowledges and state is read back. A servo is not a door interlock.
             </p>
           </ModePanel>
 

@@ -57,45 +57,28 @@ export class SimulatedNode implements DeviceNode {
   }
 }
 
-/** Browser -> ESP32 over HTTP (used when the Python backend is not running). */
-export class Esp32HttpNode implements DeviceNode {
-  name = 'esp32'
+/**
+ * The Arduino Uno is attached by USB serial, which only the Python backend can open.
+ * In the browser-only runtime hardware mode is therefore unavailable and every call fails
+ * loudly: no acknowledgement is ever fabricated in its place.
+ */
+export class ArduinoSerialUnavailableNode implements DeviceNode {
+  name = 'arduino-uno'
   simulated = false
-  constructor(public host = '', public port = 80, public timeoutS = 2) {}
-  private async req(method: string, path: string, body?: unknown): Promise<Record<string, unknown>> {
-    if (!this.host) throw new NodeError('ESP32 host not configured')
-    const ctl = new AbortController()
-    const timer = setTimeout(() => ctl.abort(), this.timeoutS * 1000)
-    try {
-      // text/plain avoids a CORS pre-flight, which the minimal ESP32 web server does not answer
-      const r = await fetch(`http://${this.host}:${this.port}${path}`, {
-        method,
-        signal: ctl.signal,
-        headers: body ? { 'Content-Type': 'text/plain' } : undefined,
-        body: body ? JSON.stringify(body) : undefined,
-      })
-      if (!r.ok) throw new NodeError(`HTTP ${r.status}`)
-      const j = await r.json()
-      if (typeof j !== 'object' || j === null) throw new NodeError('Malformed reply')
-      return j as Record<string, unknown>
-    } catch (e) {
-      throw e instanceof NodeError ? e : new NodeError(e instanceof Error && e.name === 'AbortError' ? 'timeout' : `network error (${e instanceof Error ? e.message : e})`)
-    } finally {
-      clearTimeout(timer)
-    }
+  constructor(public port = '', public baud = 9600, public timeoutS = 2) {}
+  private fail(): never {
+    throw new NodeError(
+      'Hardware mode needs the Python backend: a browser cannot open the Arduino USB serial port. Start scripts\\run.bat and reload.',
+    )
   }
-  async health() {
-    await this.req('GET', '/health')
+  async health(): Promise<void> {
+    this.fail()
   }
-  async send(cmd: DeviceCommand): Promise<Ack> {
-    const j = await this.req('POST', '/command', { command_id: cmd.command_id, device: cmd.device, action: cmd.action, source: cmd.source })
-    if (typeof j.command_id !== 'string' || typeof j.status !== 'string') throw new NodeError('Malformed acknowledgement')
-    return j as unknown as Ack
+  async send(): Promise<Ack> {
+    this.fail()
   }
-  async readState() {
-    const j = await this.req('GET', '/state')
-    const d = (j.devices ?? j) as Record<string, unknown>
-    return Object.fromEntries(Object.entries(d).filter(([k]) => k in DEVICE_SPECS).map(([k, v]) => [k, String(v)]))
+  async readState(): Promise<Record<string, string>> {
+    this.fail()
   }
 }
 
@@ -116,7 +99,7 @@ export function validateCommand(cmd: DeviceCommand, minConfidence: number): stri
 
 export class DeviceController {
   sim = new SimulatedNode()
-  hw = new Esp32HttpNode()
+  hw = new ArduinoSerialUnavailableNode()
   twin: Record<string, DeviceTwin> = {}
   private results = new Map<string, CommandResult>()
   private chain: Promise<unknown> = Promise.resolve()
@@ -154,8 +137,8 @@ export class DeviceController {
     for (const id of Object.keys(this.twin)) this.emitDevice(id, `Mode switched to ${mode}`)
   }
 
-  configureHardware(host: string, port: number, timeoutS: number) {
-    Object.assign(this.hw, { host, port, timeoutS })
+  configureHardware(port: string, baud: number, timeoutS: number) {
+    Object.assign(this.hw, { port, baud, timeoutS })
   }
 
   async refresh(): Promise<boolean> {

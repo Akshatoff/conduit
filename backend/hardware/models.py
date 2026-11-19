@@ -30,13 +30,15 @@ class DeviceSpec(BaseModel):
     pin: int
 
 
+# The Arduino Uno node drives exactly two isolated low-voltage outputs. There is no motor,
+# fan or other actuator: removing a device here removes it from validation, the twin, the
+# control zones, analytics targets and the firmware protocol in one place.
 DEVICE_SPECS: Dict[str, DeviceSpec] = {
-    "lighting": DeviceSpec(id="lighting", name="Lighting", type="led", hardware="Low-voltage LED", actions=["ON", "OFF"],
-                           states=["ON", "OFF"], safe_state="OFF", pin=25),
-    "ventilation": DeviceSpec(id="ventilation", name="Ventilation", type="fan", hardware="Small DC fan + driver",
-                              actions=["ON", "OFF"], states=["ON", "OFF"], safe_state="OFF", pin=26),
-    "access": DeviceSpec(id="access", name="Access control", type="servo_latch", hardware="SG90 servo, model latch",
-                         actions=["LOCK", "UNLOCK"], states=["LOCKED", "UNLOCKED"], safe_state="LOCKED", pin=27),
+    "lighting": DeviceSpec(id="lighting", name="Lighting", type="led", hardware="LED on D3 (+220R)",
+                           actions=["ON", "OFF"], states=["ON", "OFF"], safe_state="OFF", pin=3),
+    "access": DeviceSpec(id="access", name="Access control", type="servo_latch",
+                         hardware="SG90 servo on D9 (0 deg locked / 90 deg unlocked)",
+                         actions=["LOCK", "UNLOCK"], states=["LOCKED", "UNLOCKED"], safe_state="LOCKED", pin=9),
 }
 
 ACTION_TO_STATE = {"ON": "ON", "OFF": "OFF", "LOCK": "LOCKED", "UNLOCK": "UNLOCKED"}

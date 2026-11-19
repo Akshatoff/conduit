@@ -1,5 +1,5 @@
 @echo off
-REM CONDUIT - run all automated tests (no camera or ESP32 needed)
+REM CONDUIT - run all automated tests (no camera or Arduino needed)
 cd /d "%~dp0\.."
 call .venv\Scripts\activate.bat
 echo === Python: landmarks, trajectory, intent engine, devices, analytics, API ===

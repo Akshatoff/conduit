@@ -1,11 +1,10 @@
 import asyncio
 
-import httpx
 import pytest
 
 from backend.hardware.controller import DeviceController
 from backend.hardware.models import CommandStatus, DeviceCommand
-from backend.hardware.nodes import ESP32Node, NodeError, SimulatedNode
+from backend.hardware.nodes import ArduinoSerialNode, NodeError, SimulatedNode
 from backend.hardware.validation import validate_command
 
 
@@ -38,10 +37,10 @@ def test_intent_command_below_confidence_is_rejected():
 # ------------------------------------------------------------------ simulation
 async def test_simulation_ack_then_confirmed_state():
     c, ev = make()
-    res = await c.execute(cmd("ventilation", "ON"))
+    res = await c.execute(cmd("access", "UNLOCK"))
     assert res.status == CommandStatus.CONFIRMED and res.acknowledged and res.simulated
-    assert c.twin["ventilation"]["confirmed_state"] == "ON"
-    assert c.twin["ventilation"]["simulated"] is True
+    assert c.twin["access"]["confirmed_state"] == "UNLOCKED"
+    assert c.twin["access"]["simulated"] is True
     types = [t for t, _ in ev]
     assert types.index("command_sent") < types.index("command_acknowledged") < types.index("device_state_changed")
     assert res.latency_ms is not None and res.ack_latency_ms is not None
@@ -96,9 +95,9 @@ async def test_simulated_link_failure_reports_disconnected_and_failsafe():
     c, _ = make()
     await c.execute(cmd("lighting", "ON"))
     c.set_simulated_fault(True)
-    res = await c.execute(cmd("ventilation", "ON"))
+    res = await c.execute(cmd("access", "UNLOCK"))
     assert res.status == CommandStatus.DISCONNECTED and not res.acknowledged
-    assert c.twin["ventilation"]["connection"] == "disconnected"
+    assert c.twin["access"]["connection"] == "disconnected"
     assert c.twin["lighting"]["confirmed_state"] == "UNKNOWN"
     c.set_simulated_fault(False)
     assert await c.refresh()
@@ -107,12 +106,13 @@ async def test_simulated_link_failure_reports_disconnected_and_failsafe():
 
 
 # -------------------------------------------------------------------- hardware
-async def test_hardware_mode_without_esp32_never_fakes_acknowledgement():
+async def test_hardware_mode_without_serial_port_never_fakes_acknowledgement():
     c, _ = make(mode="hardware")
-    c.configure_hardware("127.0.0.1", 9, 0.3)           # nothing listens on port 9
+    c.configure_hardware("", 9600, 0.3)                  # no port configured
     res = await c.execute(cmd("lighting", "ON"))
     assert res.status == CommandStatus.DISCONNECTED
-    assert res.acknowledged is False and res.executed_on == "esp32"
+    assert res.acknowledged is False and res.executed_on == "arduino-uno"
+    assert "not configured" in res.detail
     assert c.twin["lighting"]["confirmed_state"] == "UNKNOWN"
 
 
@@ -123,69 +123,112 @@ async def test_baseline_commands_never_reach_hardware():
     assert c.twin["access"]["confirmed_state"] == "UNKNOWN"   # physical twin untouched
 
 
-def esp_with_transport(handler):
-    node = ESP32Node("esp.local", 80, 1.0)
-    real = httpx.AsyncClient
+class FakeSerial:
+    """Minimal pyserial stand-in that speaks the real Arduino Uno line protocol."""
 
-    class Patched(real):
-        def __init__(self, *a, **k):
-            super().__init__(*a, transport=httpx.MockTransport(handler), **k)
+    def __init__(self, *, silent: bool = False, reject: bool = False, wrong_id: bool = False,
+                 stuck_state: bool = False) -> None:
+        self.silent = silent
+        self.reject = reject
+        self.wrong_id = wrong_id
+        self.stuck_state = stuck_state
+        self.state = {"lighting": "OFF", "access": "LOCKED"}
+        self.buffer = b""
+        self.written: list[str] = []
+        self.closed = False
 
-    return node, Patched
+    def _reply(self, text: str) -> None:
+        self.buffer += (text + "\n").encode()
+
+    def write(self, data: bytes) -> int:
+        line = data.decode().strip()
+        self.written.append(line)
+        if self.silent:
+            return len(data)
+        if line == "PING":
+            self._reply("PONG conduit-uno-1.0 4321")
+        elif line == "STATE?":
+            self._reply(f"STATE lighting={self.state['lighting']} access={self.state['access']} servo=0")
+        elif line.startswith("CMD "):
+            _, cid, device, action, _source = line.split(" ")
+            reply_id = "someone-else" if self.wrong_id else cid
+            if self.reject:
+                self._reply(f"ACK {reply_id} {device} REJECTED {self.state.get(device, '-')} estop engaged")
+            elif device not in self.state:
+                self._reply(f"ACK {reply_id} {device} REJECTED - unknown device")
+            else:
+                target = {"ON": "ON", "OFF": "OFF", "LOCK": "LOCKED", "UNLOCK": "UNLOCKED"}[action]
+                if not self.stuck_state:
+                    self.state[device] = target
+                self._reply(f"ACK {reply_id} {device} ACKNOWLEDGED {target}")
+        else:
+            self._reply("ERR unknown command")
+        return len(data)
+
+    def readline(self) -> bytes:
+        if b"\n" not in self.buffer:
+            return b""
+        line, self.buffer = self.buffer.split(b"\n", 1)
+        return line + b"\n"
+
+    def flush(self) -> None:
+        pass
+
+    def close(self) -> None:
+        self.closed = True
 
 
-async def test_esp32_command_acknowledged_and_state_read_back(monkeypatch):
-    state = {"lighting": "OFF", "ventilation": "OFF", "access": "LOCKED"}
+def serial_node(fake: FakeSerial) -> ArduinoSerialNode:
+    node = ArduinoSerialNode("COM3", 9600, 1.0, serial_factory=lambda **_: fake)
+    node.link.boot_delay_s = 0.0
+    return node
 
-    def handler(request: httpx.Request):
-        if request.url.path == "/command":
-            body = __import__("json").loads(request.content)
-            state[body["device"]] = {"ON": "ON", "OFF": "OFF", "LOCK": "LOCKED", "UNLOCK": "UNLOCKED"}[body["action"]]
-            return httpx.Response(200, json={"command_id": body["command_id"], "device": body["device"],
-                                             "status": "ACKNOWLEDGED", "actual_state": state[body["device"]]})
-        if request.url.path == "/state":
-            return httpx.Response(200, json={"devices": state})
-        return httpx.Response(200, json={"status": "ok"})
 
-    node, patched = esp_with_transport(handler)
-    monkeypatch.setattr("backend.hardware.nodes.httpx.AsyncClient", patched)
-    c = DeviceController(sim=SimulatedNode(0.0), hw=node, mode="hardware", min_confidence=0.75)
+async def test_serial_command_acknowledged_and_state_read_back():
+    fake = FakeSerial()
+    c = DeviceController(sim=SimulatedNode(0.0), hw=serial_node(fake), mode="hardware", min_confidence=0.75)
     assert await c.refresh()
     assert c.twin["lighting"]["connection"] == "connected"
-    res = await c.execute(cmd("lighting", "ON"))
+    assert c.twin["access"]["confirmed_state"] == "LOCKED"
+
+    res = await c.execute(cmd("access", "UNLOCK"))
     assert res.status == CommandStatus.CONFIRMED and res.simulated is False
-    assert c.twin["lighting"]["confirmed_state"] == "ON"
-    assert c.twin["lighting"]["state_source"] == "device_readback"
+    assert c.twin["access"]["confirmed_state"] == "UNLOCKED"
+    assert c.twin["access"]["state_source"] == "device_readback"
+    assert any(w.startswith("CMD ") and w.endswith("access UNLOCK conduit_intent_engine") for w in fake.written)
+    assert "PING" in fake.written and "STATE?" in fake.written
 
 
-async def test_esp32_wrong_command_id_in_ack_is_failure(monkeypatch):
-    def handler(request):
-        return httpx.Response(200, json={"command_id": "someone-else", "device": "lighting", "status": "ACKNOWLEDGED", "actual_state": "ON"})
-
-    node, patched = esp_with_transport(handler)
-    monkeypatch.setattr("backend.hardware.nodes.httpx.AsyncClient", patched)
-    c = DeviceController(sim=SimulatedNode(0.0), hw=node, mode="hardware")
+async def test_serial_wrong_command_id_in_ack_is_failure():
+    c = DeviceController(sim=SimulatedNode(0.0), hw=serial_node(FakeSerial(wrong_id=True)), mode="hardware")
     res = await c.execute(cmd("lighting", "ON"))
     assert res.status == CommandStatus.FAILED and "does not match" in res.detail
 
 
-async def test_esp32_malformed_reply_and_http_error(monkeypatch):
-    node, patched = esp_with_transport(lambda r: httpx.Response(500, text="boom"))
-    monkeypatch.setattr("backend.hardware.nodes.httpx.AsyncClient", patched)
+async def test_serial_silence_is_disconnected_not_success():
+    c = DeviceController(sim=SimulatedNode(0.0), hw=serial_node(FakeSerial(silent=True)), mode="hardware")
+    res = await c.execute(cmd("lighting", "ON"))
+    assert res.status == CommandStatus.DISCONNECTED and res.acknowledged is False
+    assert c.twin["lighting"]["connection"] == "disconnected"
+    assert c.twin["lighting"]["confirmed_state"] == "UNKNOWN"
+
+
+async def test_serial_rejected_ack_is_failure():
+    c = DeviceController(sim=SimulatedNode(0.0), hw=serial_node(FakeSerial(reject=True)), mode="hardware")
+    res = await c.execute(cmd("lighting", "ON"))
+    assert res.status == CommandStatus.FAILED and "estop" in res.detail
+
+
+async def test_serial_ack_without_state_change_is_failure():
+    c = DeviceController(sim=SimulatedNode(0.0), hw=serial_node(FakeSerial(stuck_state=True)), mode="hardware")
+    assert await c.refresh()                 # state read back: LED OFF
+    res = await c.execute(cmd("lighting", "ON"))
+    assert res.status == CommandStatus.FAILED
+    assert c.twin["lighting"]["confirmed_state"] == "OFF"
+
+
+async def test_serial_node_reports_unconfigured_port():
+    node = ArduinoSerialNode()
+    node.link.boot_delay_s = 0.0
     with pytest.raises(NodeError):
         await node.health()
-    c = DeviceController(sim=SimulatedNode(0.0), hw=node, mode="hardware")
-    assert (await c.execute(cmd())).status == CommandStatus.DISCONNECTED
-
-
-async def test_esp32_ack_with_rejected_status_is_failure(monkeypatch):
-    def handler(request):
-        body = __import__("json").loads(request.content)
-        return httpx.Response(200, json={"command_id": body["command_id"], "device": body["device"], "status": "REJECTED",
-                                         "actual_state": "OFF", "detail": "estop engaged"})
-
-    node, patched = esp_with_transport(handler)
-    monkeypatch.setattr("backend.hardware.nodes.httpx.AsyncClient", patched)
-    c = DeviceController(sim=SimulatedNode(0.0), hw=node, mode="hardware")
-    res = await c.execute(cmd())
-    assert res.status == CommandStatus.FAILED and "estop" in res.detail

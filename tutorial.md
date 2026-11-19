@@ -7,10 +7,10 @@ For installation, hardware wiring and the architecture, see [`README.md`](README
 > **Current gesture model:** Conduit uses **poses** — pinch, open palm, fist and point. Distance between
 > two hands is not a control. This replaced the older two-hand spread/zoom interaction.
 
-> **Prototype only.** Conduit drives isolated low-voltage demo electronics (LED, small DC fan and a
-> model servo latch). It is not a medical, industrial or safety-certified system. Digital panels are
-> clearly labelled as simulated; physical states are only shown as confirmed after an ACK **and** a
-> read-back.
+> **Prototype only.** Conduit drives isolated low-voltage demo electronics on an **Arduino Uno over USB
+> serial**: one LED (D3) and one SG90 servo latch (D9). There is no motor or fan. It is not a medical,
+> industrial or safety-certified system. Digital panels are clearly labelled as simulated; physical
+> states are only shown as confirmed after an ACK **and** a read-back.
 
 
 ## Contents
@@ -53,6 +53,8 @@ different environment changes zones, controls and demo data — not the engine.
 5. Move steadily into one of the control zones on the left or right rail and hold still.
 6. When the target shows as selected/ready, **pinch thumb and index** to confirm.
 7. Open **Signature screen** from the toolbar to practise the view gestures (zoom, pan, rotate, swipe).
+8. Open **Hardware** to exercise the two physical outputs individually, or **Digital Twin** to watch the
+   full ACK → read-back lifecycle. `docs/HARDWARE.md` covers wiring, flashing and the serial protocol.
 
 **Pointer simulator:** on **Live Interaction**, switch the input source to **Pointer simulator**. Move
 the mouse over the stage to move a synthetic 21-point hand; hold the mouse button to pinch. Use the
@@ -184,7 +186,7 @@ Zoom is limited to **1–5×** on the camera signature views (**3.6×** on the h
 
 - **Digital controls:** Process stage, Wafer inspection, Defect category, Confirm inspection,
   Manufacturing checklist.
-- **Physical:** Equipment LED, Ventilation fan, Model access latch (servo).
+- **Physical:** Equipment LED, Model access latch (servo).
 - **Signature:** CAM 1 + CAM 2; pinch zooms CAM 2 in, still open hand zooms out, point-drag pans.
   Defect labels and the wafer map sharpen with zoom.
 
@@ -250,9 +252,9 @@ is always movement into a zone and cannot be replaced by a pose.
 
 ### Device mappings
 
-Each zone has a label and a target device: **Lighting** (LED), **Ventilation** (fan) or **Access control**
-(servo latch). Mode geometry controls where the rails sit; a physical zone and a digital mode control
-both pass through the same selection and confirmation pipeline.
+Each zone has a label and a target device: **Lighting** (LED) or **Access control** (servo latch). Mode
+geometry controls where the rails sit; a physical zone and a digital mode control both pass through the
+same selection and confirmation pipeline.
 
 ### Camera
 
@@ -269,11 +271,14 @@ both pass through the same selection and confirmation pipeline.
 - Processing is local. Only structured events (state, confidence, reason) are logged — not images.
 - A **CAMERA ACTIVE** indicator is shown while the camera is on.
 
-### Simulation & ESP32
+### Simulation & Arduino Uno
 
 - **Simulation mode** is always available and goes through the same validation, ACK and read-back path.
-- **Real hardware** uses an ESP32 at the configured IP/port with a timeout.
-- Only isolated low-voltage demo electronics are supported.
+- **Real hardware** is an Arduino Uno on a USB **serial port** (`COM3`, `/dev/ttyACM0`, …) at **9600**
+  baud with a timeout. *Find ports* lists what the backend can see.
+- The sketch must be flashed and the Arduino Serial Monitor closed; a port can only be open in one
+  program. The browser runtime cannot open a serial port, so real hardware needs the Python backend.
+- Only isolated low-voltage demo electronics are supported: LED on D3 and a servo on D9.
 
 ### Connection
 
@@ -288,14 +293,16 @@ both pass through the same selection and confirmation pipeline.
 
 - **Digital** controls are mode-layer panels (records, recipes, wafer maps, checklists, timers). They
   pass the same Intent Engine pipeline and are labelled digital/simulated.
-- **Physical** controls are the three low-voltage demo outputs:
-  - **Lighting** — LED (ON/OFF)
-  - **Ventilation** — small DC fan (ON/OFF)
-  - **Access control** — SG90 servo model latch (LOCK/UNLOCK)
+- **Physical** controls are exactly two low-voltage outputs on the Arduino Uno:
+  - **Lighting** — LED on **D3** (ON/OFF)
+  - **Access control** — SG90 servo on **D9**, 0° locked / 90° unlocked (LOCK/UNLOCK)
+- There is no motor or fan; the earlier ventilation output has been removed everywhere.
 - Physical state is shown as confirmed only after the node **ACK** and an independent **read-back**.
 - If the link fails, the twin shows **DISCONNECTED/UNKNOWN** — never a fake success.
-- Manual device testing exists only on **Digital Twin** device cards; mode control surfaces have no
-  manual/rehearsal shortcut.
+- **Hardware** in the navigation is the bench: one card per output with *LED ON / LED OFF* and
+  *Rotate to 90° / Rotate to 0°*, plus the last ACK, command id and error. Every press is a
+  `manual_test` command through the normal validate → ACK → read-back path. The Digital Twin device
+  cards also keep their manual buttons. Mode control surfaces have no manual/rehearsal shortcut.
 
 ---
 
@@ -329,6 +336,7 @@ both pass through the same selection and confirmation pipeline.
 | Signature gestures pause | They pause during an in-flight Intent Engine selection/confirmation/execution. The signature overlay's local runtime also pauses the engine while open. |
 | CAM 2 shows "same camera" | Only one browser video device is exposed. Connect/close apps using the second camera, then refresh in Settings. |
 | Gesture flips around | Improve lighting/background, keep one hand in frame, reduce landmark smoothing lag, and use the pose hold rather than quick flashes. |
+| Servo/LED do nothing | Hardware page → check the serial port and 9600 baud, close the Arduino Serial Monitor, press *Test link*. `UNKNOWN` means the board is not answering — never a fake success. |
 
 ---
 
