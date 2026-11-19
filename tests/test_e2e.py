@@ -11,7 +11,7 @@ from backend.services.runtime import ConduitRuntime
 
 from .scenarios import Driver
 
-VENT_X = 0.5
+LIGHT_X = 0.25
 
 
 @pytest.fixture
@@ -34,14 +34,14 @@ async def test_full_pipeline_confirms_twin_and_persists(rt):
     d = Driver(runtime=rt)
     d.activate = lambda: d.hold("open_palm", 0.5, 0.82, 1.1)
     d.activate()
-    d.deliberate_select(VENT_X)
+    d.deliberate_select(LIGHT_X)
     assert rt.engine.state.value == "AWAITING_CONFIRMATION"
-    assert rt.controller.twin["ventilation"]["confirmed_state"] == "OFF"
-    d.pinch(VENT_X, 0.33, 0.4)
+    assert rt.controller.twin["lighting"]["confirmed_state"] == "OFF"
+    d.pinch(LIGHT_X, 0.33, 0.4)
     await settle()
-    d.hold("pinch", VENT_X, 0.33, 0.1)
-    assert rt.controller.twin["ventilation"]["confirmed_state"] == "ON"
-    assert rt.controller.twin["ventilation"]["simulated"] is True
+    d.hold("pinch", LIGHT_X, 0.33, 0.1)
+    assert rt.controller.twin["lighting"]["confirmed_state"] == "ON"
+    assert rt.controller.twin["lighting"]["simulated"] is True
     assert rt.engine.state.value in ("COMPLETED", "READY")
 
     types = []
@@ -79,12 +79,12 @@ async def test_comparative_session_baseline_vs_conduit(rt):
     d.gone(0.5)
     await settle()
     rt.analytics.end_trial()
-    rt.analytics.start_trial("intended", "ventilation", "deliberate")
+    rt.analytics.start_trial("intended", "lighting", "deliberate")
     d.hold("open_palm", 0.5, 0.82, 1.1)
-    d.deliberate_select(VENT_X)
-    d.pinch(VENT_X, 0.33, 0.4)
+    d.deliberate_select(LIGHT_X)
+    d.pinch(LIGHT_X, 0.33, 0.4)
     await settle()
-    d.hold("pinch", VENT_X, 0.33, 0.1)
+    d.hold("pinch", LIGHT_X, 0.33, 0.1)
     rt.analytics.end_trial()
     c = rt.analytics.stop_session()["metrics"]
     assert c["false_activation_rate"] == 0.0 and c["successful_deliberate"] == 1
@@ -100,7 +100,8 @@ async def test_comparative_session_baseline_vs_conduit(rt):
     rt.analytics.end_trial()
     b = rt.analytics.stop_session()["metrics"]
     assert b["false_activation_rate"] == 1.0
-    assert rt.controller.twin["lighting"]["confirmed_state"] == "ON"   # baseline still goes through the controller
+    # Baseline fired again through the controller; it toggles the LED from ON back to OFF.
+    assert rt.controller.twin["lighting"]["confirmed_state"] == "OFF"
 
 
 async def test_mode_switch_blocked_during_session(rt):
@@ -112,13 +113,13 @@ async def test_mode_switch_blocked_during_session(rt):
 async def test_simulated_link_failure_surfaces_in_intent_engine(rt):
     d = Driver(runtime=rt)
     d.hold("open_palm", 0.5, 0.82, 1.1)
-    d.deliberate_select(VENT_X)
+    d.deliberate_select(LIGHT_X)
     rt.controller.set_simulated_fault(True)
-    d.pinch(VENT_X, 0.33, 0.4)
+    d.pinch(LIGHT_X, 0.33, 0.4)
     await settle()
-    d.hold("pinch", VENT_X, 0.33, 0.1)
+    d.hold("pinch", LIGHT_X, 0.33, 0.1)
     assert rt.engine.state.value in ("ERROR", "READY")
-    assert rt.controller.twin["ventilation"]["connection"] == "disconnected"
+    assert rt.controller.twin["lighting"]["connection"] == "disconnected"
     assert rt.repo.recent_commands()[0]["execution_status"] == "DISCONNECTED"
 
 
@@ -136,7 +137,7 @@ def test_api_health_status_and_devices(client):
     s = client.get("/api/system/status").json()
     assert s["hardware_mode"] == "simulation" and s["privacy"]["video_stored"] is False
     devs = client.get("/api/devices").json()
-    assert {d["id"] for d in devs["devices"]} == {"lighting", "ventilation", "access"} and devs["simulated"] is True
+    assert {d["id"] for d in devs["devices"]} == {"lighting", "access"} and devs["simulated"] is True
     assert client.get("/api/devices/lighting").status_code == 200
     assert client.get("/api/devices/nope").status_code == 404
 
@@ -170,13 +171,19 @@ def test_api_interaction_controls_and_mode(client):
     assert client.get("/api/intent/status").json()["mode"] == "baseline"
 
 
-def test_api_settings_roundtrip_and_hardware_mode_without_esp32(client):
+def test_api_serial_port_listing(client):
+    r = client.get("/api/hardware/ports").json()
+    assert isinstance(r["ports"], list)          # empty on a machine with no serial hardware
+
+
+def test_api_settings_roundtrip_and_hardware_mode_without_serial_port(client):
     s = client.get("/api/settings").json()
+    assert s["arduino"]["baud"] == 9600 and s["arduino"]["port"] == ""
     s["intent"]["min_confidence"] = 0.8
     assert client.put("/api/settings", json=s).json()["intent"]["min_confidence"] == 0.8
     assert client.get("/api/intent/status").json()["config"]["min_confidence"] == 0.8
     r = client.post("/api/hardware/mode", json={"mode": "hardware"}).json()
-    assert r["mode"] == "hardware"
+    assert r["mode"] == "hardware" and r["hardware"]["baud"] == 9600
     assert all(d["connection"] == "disconnected" and d["confirmed_state"] == "UNKNOWN" for d in r["devices"])
     res = client.post("/api/devices/lighting/test", json={"action": "ON"}).json()
     assert res["status"] == "DISCONNECTED" and res["acknowledged"] is False

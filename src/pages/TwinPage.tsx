@@ -1,4 +1,4 @@
-import { Cpu, FlaskConical, Lightbulb, Lock, PlugZap, Server, Unplug, Wifi, WifiOff, Wind } from 'lucide-react'
+import { Cpu, FlaskConical, Lightbulb, Lock, PlugZap, Server, Unplug, Wifi, WifiOff } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { EventLog } from '../components/EventLog'
 import { ModeTwinPanel } from '../components/mode/ModeTwinPanel'
@@ -23,20 +23,6 @@ function BulbArt({ on, unknown }: { on: boolean; unknown: boolean }) {
       <path d="M60 18c-17 0-29 12-29 28 0 11 6 18 12 25 3 4 5 8 5 13h24c0-5 2-9 5-13 6-7 12-14 12-25 0-16-12-28-29-28z" fill={on ? '#ffd877' : '#18263d'} stroke={unknown ? '#8796aa' : on ? '#f5b942' : '#3a4f72'} strokeWidth="2.5" strokeDasharray={unknown ? '4 4' : undefined} />
       <rect x="48" y="86" width="24" height="7" rx="3" fill="#2a3d5c" />
       <rect x="51" y="95" width="18" height="7" rx="3" fill="#2a3d5c" />
-    </svg>
-  )
-}
-
-function FanArt({ on, unknown }: { on: boolean; unknown: boolean }) {
-  return (
-    <svg viewBox="0 0 120 120" className="size-28" aria-hidden>
-      <circle cx="60" cy="60" r="50" fill="#0f1a2c" stroke={unknown ? '#8796aa' : on ? '#42d6c5' : '#3a4f72'} strokeWidth="2.5" strokeDasharray={unknown ? '4 4' : undefined} />
-      <g className={cn(on && 'animate-fan')} style={{ transformOrigin: '60px 60px' }}>
-        {[0, 120, 240].map((a) => (
-          <path key={a} transform={`rotate(${a} 60 60)`} d="M60 60C52 40 54 22 66 16c10 8 8 28-6 44z" fill={on ? '#42d6c5' : '#2a3d5c'} opacity={on ? 0.9 : 1} />
-        ))}
-      </g>
-      <circle cx="60" cy="60" r="7" fill="#162338" stroke="#8796aa" />
     </svg>
   )
 }
@@ -91,7 +77,7 @@ function DeviceCard({ d, tick }: { d: DeviceTwin; tick: number }) {
   const on = d.confirmed_state === 'ON'
   const locked = d.confirmed_state === 'LOCKED'
   const conn = connTone(d.connection)
-  const Icon = d.type === 'led' ? Lightbulb : d.type === 'fan' ? Wind : Lock
+  const Icon = d.type === 'led' ? Lightbulb : Lock
   return (
     <Card
       title={d.name}
@@ -107,7 +93,6 @@ function DeviceCard({ d, tick }: { d: DeviceTwin; tick: number }) {
     >
       <div className="flex items-center gap-4">
         {d.type === 'led' && <BulbArt on={on} unknown={unknown} />}
-        {d.type === 'fan' && <FanArt on={on} unknown={unknown} />}
         {d.type === 'servo_latch' && <LatchArt locked={locked} unknown={unknown} />}
         <div className="min-w-0">
           <p className="text-[11px] uppercase tracking-wider text-muted">Confirmed state</p>
@@ -171,7 +156,7 @@ export function TwinPage() {
               {simulated ? <Server className="size-5" /> : <Cpu className="size-5" />}
             </div>
             <div>
-              <p className="text-sm font-semibold text-ink">{simulated ? 'Simulation node' : `ESP32 node ${info.host ? `· ${info.host}:${info.port}` : '(not configured)'}`}</p>
+              <p className="text-sm font-semibold text-ink">{simulated ? 'Simulation node' : `Arduino Uno ${info.port ? `· ${info.port} @ ${info.baud}` : '(serial port not set)'}`}</p>
               <p className="text-xs text-muted">
                 {simulated
                   ? 'All device states shown are SIMULATED. Commands use the same validation, acknowledgement and read-back path as real hardware.'
@@ -213,7 +198,7 @@ export function TwinPage() {
       {list.length === 0 ? (
         <p className="text-sm text-muted">Waiting for device registration…</p>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-3">
+        <div className="grid gap-4 lg:grid-cols-2">
           {list.map((d) => (
             <DeviceCard key={d.id} d={d} tick={tick} />
           ))}
@@ -225,10 +210,10 @@ export function TwinPage() {
         <Card title="Safety notes">
           <ul className="space-y-2 text-xs leading-relaxed text-muted">
             <li>• The twin changes <b className="text-ink">only</b> after an acknowledgement <i>and</i> an independent state read-back agree. Sending a command never updates it.</li>
-            <li>• Demonstration hardware is isolated low-voltage only: LED, small DC fan, SG90 servo with a model latch.</li>
+            <li>• Demonstration hardware is isolated low-voltage only: one LED on D3 and an SG90 servo on D9. There is no motor or fan.</li>
             <li>• Never connect Conduit to mains power, real door locks, medical or industrial equipment.</li>
-            <li>• ESP32 firmware returns outputs to a safe state (LED off, fan off, latch locked) when host contact is lost.</li>
-            {kind === 'browser' && <li>• Browser runtime talks to the ESP32 directly over HTTP; this needs the page to be served over http/file (not https).</li>}
+            <li>• Arduino firmware returns both outputs to a safe state (LED off, servo 0° / LOCKED) when host contact is lost.</li>
+            {kind === 'browser' && <li>• Browser runtime cannot open the Arduino USB serial port: hardware mode needs the Python backend.</li>}
           </ul>
         </Card>
       </div>

@@ -46,10 +46,22 @@ async function main() {
   check('environment selection renders first', S().page === 'modes' && /Choose your environment/.test(text()) && /Hospital/.test(text()) && /Semiconductor/.test(text()))
   check('all five environments are offered', (text().match(/Enter mode/g) ?? []).length === 5)
 
-  for (const [page, needle] of [['twin', 'Confirmed state'], ['analytics', 'No test results yet'], ['settings', 'Intent thresholds'], ['live', 'What the system believes']] as const) {
+  for (const [page, needle] of [['twin', 'Confirmed state'], ['hardware', 'Bench rules'], ['analytics', 'No test results yet'], ['settings', 'Intent thresholds'], ['live', 'What the system believes']] as const) {
     await act(async () => { useConduit.setState({ page }); await sleep(150) })
     check(`page "${page}" renders`, text().includes(needle), text().slice(0, 200))
   }
+  await act(async () => { useConduit.setState({ page: 'hardware' }); await sleep(150) })
+  check('hardware bench exposes exactly the LED and the servo', /LED · D3/.test(text()) && /Servo · D9/.test(text()) && !/Ventilation/.test(text()), text().slice(0, 300))
+  check('hardware bench has one control per output action', (text().match(/LED ON/g) ?? []).length === 1 && (text().match(/Rotate to 90/g) ?? []).length === 1)
+  const benchBtn = (label: string) => Array.from(document.querySelectorAll('button')).find((b) => (b.textContent ?? '').trim() === label)
+  await act(async () => { benchBtn('LED ON')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); await sleep(600) })
+  check('bench LED ON confirmed via manual_test + read-back', S().devices.lighting.confirmed_state === 'ON' && S().devices.lighting.last_command?.source === 'manual_test', JSON.stringify(S().devices.lighting))
+  await act(async () => { benchBtn('LED OFF')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); await sleep(600) })
+  check('bench LED OFF confirmed', S().devices.lighting.confirmed_state === 'OFF')
+  await act(async () => { benchBtn('Rotate to 90°')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); await sleep(600) })
+  check('bench servo rotates to 90° (UNLOCKED)', S().devices.access.confirmed_state === 'UNLOCKED' && S().devices.access.last_ack?.status === 'ACKNOWLEDGED', JSON.stringify(S().devices.access))
+  await act(async () => { benchBtn('Rotate to 0°')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); await sleep(600) })
+  check('bench servo returns to 0° (LOCKED)', S().devices.access.confirmed_state === 'LOCKED')
   await act(async () => { useConduit.setState({ page: 'settings' }); await sleep(150) })
   check('settings owns the object-camera index selector', !!document.querySelector('select[aria-label="Object camera index"]'))
   check('analytics shows empty state (no fabricated data)', S().analytics?.has_data === false)
@@ -60,14 +72,14 @@ async function main() {
   check('simulator running', S().camera.state === 'running')
   await hold(0.5, 0.82, 1.2)
   check('open palm activates interaction', S().intent.active, S().intent.reason)
-  await move([0.5, 0.82], [0.5, 0.33], 0.7)
-  await hold(0.5, 0.33, 1.3)
+  await move([0.5, 0.82], [0.25, 0.33], 0.7)
+  await hold(0.25, 0.33, 1.3)
   check('deliberate approach -> AWAITING_CONFIRMATION', S().intent.state === 'AWAITING_CONFIRMATION', `${S().intent.state}: ${S().intent.reason}`)
-  check('twin NOT updated by selection alone', S().devices.ventilation.confirmed_state === 'OFF')
-  await hold(0.5, 0.33, 0.6, true)
+  check('twin NOT updated by selection alone', S().devices.lighting.confirmed_state === 'OFF')
+  await hold(0.25, 0.33, 0.6, true)
   await sleep(500)
-  check('ventilation confirmed ON only after ack + read-back', S().devices.ventilation.confirmed_state === 'ON', JSON.stringify(S().devices.ventilation))
-  check('twin records ack + command', S().devices.ventilation.last_ack?.status === 'ACKNOWLEDGED' && S().devices.ventilation.last_command?.status === 'CONFIRMED')
+  check('LED confirmed ON only after ack + read-back', S().devices.lighting.confirmed_state === 'ON', JSON.stringify(S().devices.lighting))
+  check('twin records ack + command', S().devices.lighting.last_ack?.status === 'ACKNOWLEDGED' && S().devices.lighting.last_command?.status === 'CONFIRMED')
   check('event log has intent + command entries with reasons', S().log.some((l) => l.channel === 'command' && l.code === 'CONFIRMED') && S().log.some((l) => l.channel === 'intent' && l.reason !== undefined || l.detail.length > 0))
 
   // ---- accidental swipe through zones must not execute anything
@@ -111,6 +123,7 @@ async function main() {
   check('mode workspace offers a collapsed dashboard', !!dashboardBtn)
   await act(async () => { dashboardBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true })); await sleep(200) })
   check('hospital dashboard opens on demand with its fictional-data banner', /FICTIONAL DEMONSTRATION DATA/.test(text()) && /Patient information/.test(text()))
+  const physicalBefore = JSON.stringify({ lighting: S().devices.lighting.confirmed_state + S().devices.lighting.last_command?.command_id, access: S().devices.access.confirmed_state + S().devices.access.last_command?.command_id })
   const timerZone = S().zones.find((z) => z.id === 'hospital.timer')!
   const timerX = (timerZone.x0 + timerZone.x1) / 2
   const timerY = (timerZone.y0 + timerZone.y1) / 2
@@ -123,7 +136,7 @@ async function main() {
   await hold(timerX, timerY, 0.6, true)
   await sleep(500)
   check('digital action confirmed in the mode layer (timer runs)', S().modeState.hospital.timer.running && S().modeState.hospital.history.some((h) => h.source === 'intent' && h.status === 'confirmed'), JSON.stringify(S().modeState.hospital.history.slice(0, 1)))
-  check('digital action never changes the physical twin', S().devices.lighting.last_command === null || S().devices.lighting.last_command?.source !== 'conduit_intent_engine' || S().devices.lighting.confirmed_state === 'OFF')
+  check('digital action never changes the physical twin', JSON.stringify({ lighting: S().devices.lighting.confirmed_state + S().devices.lighting.last_command?.command_id, access: S().devices.access.confirmed_state + S().devices.access.last_command?.command_id }) === physicalBefore)
   await act(async () => { useConduit.setState({ page: 'workspace' }); await sleep(200) })
   check('workspace dashboard still renders after the gesture', /Patient information/.test(text()) && /Task checklist/.test(text()))
 
@@ -150,7 +163,7 @@ async function main() {
   check('link restored -> safe states read back', S().devices.lighting.connection === 'simulated' && S().devices.lighting.confirmed_state === 'OFF')
   await act(async () => { await rt().setHardwareMode('hardware') })
   await act(async () => { await rt().testDevice('lighting', 'ON') })
-  check('hardware mode w/o ESP32 never fakes an ack', S().devices.lighting.confirmed_state === 'UNKNOWN' && S().devices.lighting.last_ack === null, JSON.stringify(S().devices.lighting))
+  check('hardware mode w/o serial port never fakes an ack', S().devices.lighting.confirmed_state === 'UNKNOWN' && S().devices.lighting.last_ack === null, JSON.stringify(S().devices.lighting))
   await act(async () => { await rt().stopVision() })
 
   // ---- per-mode signature gesture screens (view/navigation only; injected frames, no engine run)

@@ -4,7 +4,7 @@ import type { AnalyticsSummary, AppSettings, CameraState, DeviceTwin, IntentSnap
 import { initialModeStates } from './modes/registry'
 import type { ModeId, ModeState } from './modes/types'
 
-export type Page = 'modes' | 'workspace' | 'live' | 'twin' | 'analytics' | 'settings'
+export type Page = 'modes' | 'workspace' | 'live' | 'twin' | 'hardware' | 'analytics' | 'settings'
 export type PointerGesture = 'open_palm' | 'pinch' | 'fist' | 'point'
 
 /** View transform applied to the live camera while a signature screen is open. */
@@ -44,7 +44,7 @@ export interface ConduitState {
   intent: IntentSnapshot
   interactionMode: 'conduit' | 'baseline'
   hardwareMode: 'simulation' | 'hardware'
-  hardwareInfo: { host: string; port: number; timeout_s: number }
+  hardwareInfo: { port: string; baud: number; timeout_s: number }
   devices: Record<string, DeviceTwin>
   zones: Zone[]
   log: LogEntry[]
@@ -72,7 +72,7 @@ export const useConduit = create<ConduitState>(() => ({
   intent: idleSnapshot(),
   interactionMode: 'conduit',
   hardwareMode: 'simulation',
-  hardwareInfo: { host: '', port: 80, timeout_s: 2 },
+  hardwareInfo: { port: '', baud: 9600, timeout_s: 2 },
   devices: {},
   zones: defaultSettings().intent.zones,
   log: [],

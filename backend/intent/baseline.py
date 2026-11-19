@@ -13,7 +13,7 @@ from typing import Dict, List, Optional
 from .config import toggle_action
 from .engine import CommandRequest, InteractionInput
 
-DEFAULT_MAPPING = {"open_palm": "lighting", "pinch": "ventilation", "fist": "access"}
+DEFAULT_MAPPING = {"open_palm": "lighting", "fist": "access"}
 
 
 class BaselineController:

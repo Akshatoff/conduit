@@ -26,7 +26,6 @@ export const WAFER_DIES = Array.from({ length: 37 }, (_, i) => ({
 
 export const EQUIPMENT = [
   { id: 'EQ-01', name: 'Simulated process tool', indicator: 'LED · lighting node', reading: '23.4 °C', state: 'Nominal (simulated)' },
-  { id: 'EQ-02', name: 'Simulated ventilation', indicator: 'Fan · ventilation node', reading: '0.42 m/s', state: 'Filtered airflow (simulated)' },
   { id: 'EQ-03', name: 'Model access latch', indicator: 'Servo · access node', reading: '—', state: 'Closed (simulated)' },
 ]
 

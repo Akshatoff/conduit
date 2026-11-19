@@ -116,6 +116,17 @@ async def hardware_mode(body: HardwareModeRequest, request: Request):
     return r.controller.snapshot()
 
 
+@router.get("/hardware/ports")
+async def hardware_ports():
+    """Serial ports the backend can see (helps fill in Settings -> Hardware)."""
+    try:
+        from serial.tools import list_ports
+    except ImportError:
+        return {"ports": [], "error": "pyserial is not installed (pip install pyserial)"}
+    ports = await asyncio.get_running_loop().run_in_executor(None, list_ports.comports)
+    return {"ports": [{"device": p.device, "description": p.description} for p in ports]}
+
+
 @router.post("/hardware/connect")
 async def hardware_connect(request: Request):
     r = rt(request)

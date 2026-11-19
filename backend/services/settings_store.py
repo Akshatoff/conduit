@@ -21,10 +21,10 @@ def load_settings(path: Path | None = None) -> AppSettings:
         except Exception:
             s = AppSettings()  # corrupt file -> defaults
     # environment overrides (see .env.example)
-    if os.getenv("ESP32_HOST"):
-        s.esp32.host = os.environ["ESP32_HOST"]
-    if os.getenv("ESP32_PORT"):
-        s.esp32.port = int(os.environ["ESP32_PORT"])
+    if os.getenv("CONDUIT_SERIAL_PORT"):
+        s.arduino.port = os.environ["CONDUIT_SERIAL_PORT"]
+    if os.getenv("CONDUIT_SERIAL_BAUD"):
+        s.arduino.baud = int(os.environ["CONDUIT_SERIAL_BAUD"])
     if os.getenv("CONDUIT_CAMERA_INDEX"):
         s.camera.index = int(os.environ["CONDUIT_CAMERA_INDEX"])
     if os.getenv("CONDUIT_MODE") in ("simulation", "hardware"):

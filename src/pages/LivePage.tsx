@@ -126,7 +126,7 @@ export function LivePage() {
         {kind === 'browser' && (
           <p className="flex items-start gap-2 rounded-lg border border-line/70 bg-surface/50 px-3 py-2 text-[11px] leading-relaxed text-muted">
             <Info className="mt-px size-3.5 shrink-0 text-accent" />
-            Browser runtime: the Python backend was not detected, so tracking, the Intent Engine, device simulation and analytics run locally in this tab. Start the backend (see README) for server-side OpenCV/MediaPipe and ESP32 control.
+            Browser runtime: the Python backend was not detected, so tracking, the Intent Engine, device simulation and analytics run locally in this tab. Start the backend (see README) for server-side OpenCV/MediaPipe and Arduino Uno control.
           </p>
         )}
       </div>

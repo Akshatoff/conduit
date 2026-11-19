@@ -65,14 +65,14 @@ const select = (d: Driver, x: number) => {
 }
 {
   const d = new Driver()
-  select(d, 0.5)
+  select(d, 0.25)
   check('deliberate approach reaches AWAITING_CONFIRMATION', d.engine.state === 'AWAITING_CONFIRMATION', `${d.engine.state} ${d.engine.reason}`)
   check('selection alone never executes', d.commands.length === 0)
-  d.hold('pinch', 0.5, 0.33, 0.5)
-  check('pinch confirms -> EXECUTING with 1 command', d.engine.state === 'EXECUTING' && d.commands.length === 1 && d.commands[0].device === 'ventilation' && d.commands[0].action === 'ON')
+  d.hold('pinch', 0.25, 0.33, 0.5)
+  check('pinch confirms -> EXECUTING with 1 command', d.engine.state === 'EXECUTING' && d.commands.length === 1 && d.commands[0].device === 'lighting' && d.commands[0].action === 'ON')
   d.engine.notifyCommandResult(true, 'ok', d.t)
   check('result -> COMPLETED', d.engine.state === 'COMPLETED')
-  d.hold('open_palm', 0.5, 0.33, 4)
+  d.hold('open_palm', 0.25, 0.33, 4)
   check('no repeated selection while hand stays in zone', d.commands.length === 1)
 }
 {
@@ -97,22 +97,22 @@ const select = (d: Driver, x: number) => {
 }
 {
   const d = new Driver()
-  select(d, 0.5)
-  d.hold('fist', 0.5, 0.33, 0.6)
-  d.hold('pinch', 0.5, 0.33, 0.5)
+  select(d, 0.25)
+  d.hold('fist', 0.25, 0.33, 0.6)
+  d.hold('pinch', 0.25, 0.33, 0.5)
   check('closed fist cancels pending selection', d.codes().includes('CANCELLED_FIST') && d.commands.length === 0)
 }
 {
   const d = new Driver()
-  select(d, 0.5)
-  d.hold('open_palm', 0.5, 0.33, 6.5)
+  select(d, 0.25)
+  d.hold('open_palm', 0.25, 0.33, 6.5)
   check('confirmation timeout cancels', d.codes().includes('CONFIRM_TIMEOUT') && d.commands.length === 0)
 }
 {
   const d = new Driver()
-  select(d, 0.5)
+  select(d, 0.25)
   d.engine.cfg.min_confidence = 0.999
-  d.hold('pinch', 0.5, 0.33, 0.5)
+  d.hold('pinch', 0.25, 0.33, 0.5)
   check('low confidence at confirmation is rejected', d.commands.length === 0 && d.codes().includes('LOW_CONFIDENCE'))
 }
 {
@@ -129,8 +129,8 @@ const select = (d: Driver, x: number) => {
 }
 {
   const d = new Driver()
-  d.states = { ventilation: 'ON', access: 'LOCKED' }
-  select(d, 0.5)
+  d.states = { lighting: 'ON', access: 'LOCKED' }
+  select(d, 0.25)
   check('action is toggle of confirmed state (ON -> OFF)', d.engine.action === 'OFF')
 }
 

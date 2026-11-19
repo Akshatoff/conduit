@@ -14,7 +14,7 @@ export type ModeKind = 'digital' | 'physical'
 export interface ModeControl {
   /** Zone id in the camera overlay (unique across all modes). */
   id: string
-  /** Device id carried by the command. Physical ids are the shared ESP32 devices. */
+  /** Device id carried by the command. Physical ids are the shared Arduino Uno devices (lighting, access). */
   device: string
   label: string
   /** Short label drawn inside the camera zone. */

@@ -4,18 +4,16 @@ export const DEVICE_SPECS: Record<
   string,
   { id: string; name: string; type: string; hardware: string; actions: string[]; states: string[]; safe: string }
 > = {
-  lighting: { id: 'lighting', name: 'Lighting', type: 'led', hardware: 'Low-voltage LED', actions: ['ON', 'OFF'], states: ['ON', 'OFF'], safe: 'OFF' },
-  ventilation: { id: 'ventilation', name: 'Ventilation', type: 'fan', hardware: 'Small DC fan + driver', actions: ['ON', 'OFF'], states: ['ON', 'OFF'], safe: 'OFF' },
-  access: { id: 'access', name: 'Access control', type: 'servo_latch', hardware: 'SG90 servo · model latch', actions: ['LOCK', 'UNLOCK'], states: ['LOCKED', 'UNLOCKED'], safe: 'LOCKED' },
+  lighting: { id: 'lighting', name: 'Lighting', type: 'led', hardware: 'LED on D3 (+220R)', actions: ['ON', 'OFF'], states: ['ON', 'OFF'], safe: 'OFF' },
+  access: { id: 'access', name: 'Access control', type: 'servo_latch', hardware: 'SG90 servo on D9 · 0° locked / 90° unlocked', actions: ['LOCK', 'UNLOCK'], states: ['LOCKED', 'UNLOCKED'], safe: 'LOCKED' },
 }
 
 export const ACTION_TO_STATE: Record<string, string> = { ON: 'ON', OFF: 'OFF', LOCK: 'LOCKED', UNLOCK: 'UNLOCKED' }
 
 export function defaultZones(): Zone[] {
   return [
-    { id: 'lighting', label: 'Lighting', device: 'lighting', x0: 0.05, y0: 0.1, x1: 0.33, y1: 0.55 },
-    { id: 'ventilation', label: 'Ventilation', device: 'ventilation', x0: 0.36, y0: 0.1, x1: 0.64, y1: 0.55 },
-    { id: 'access', label: 'Access control', device: 'access', x0: 0.67, y0: 0.1, x1: 0.95, y1: 0.55 },
+    { id: 'lighting', label: 'Lighting', device: 'lighting', x0: 0.05, y0: 0.1, x1: 0.45, y1: 0.55 },
+    { id: 'access', label: 'Access control', device: 'access', x0: 0.55, y0: 0.1, x1: 0.95, y1: 0.55 },
   ]
 }
 
@@ -54,7 +52,7 @@ export function defaultSettings(): AppSettings {
     workspace_mode: 'hospital',
     hardware_mode: 'simulation',
     interaction_mode: 'conduit',
-    esp32: { host: '', port: 80, timeout_s: 2.0 },
+    arduino: { port: '', baud: 9600, timeout_s: 2.0 },
     camera: { index: 0, width: 640, height: 480, smoothing_alpha: 0.5 },
     privacy: { preview_stream: true, store_video: false, log_landmarks: false },
     intent: defaultIntentConfig(),

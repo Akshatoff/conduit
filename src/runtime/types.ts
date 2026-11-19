@@ -19,6 +19,8 @@ export interface Runtime {
   testDevice(id: string, action: string): Promise<void>
   setHardwareMode(m: 'simulation' | 'hardware'): Promise<void>
   connectHardware(): Promise<void>
+  /** Serial ports visible to the backend (empty in the browser runtime). */
+  listSerialPorts(): Promise<{ device: string; description: string }[]>
   simulateFault(offline: boolean): Promise<void>
   applySettings(s: AppSettings): Promise<void>
   refreshAnalytics(): Promise<void>
