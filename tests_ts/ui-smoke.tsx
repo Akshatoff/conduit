@@ -240,16 +240,31 @@ async function main() {
   const devicesBefore = JSON.stringify(S().devices)
   for (let i = 0; i < 5; i++) await push(frameAt(0.5, 0.45, 'pinch'))
   check('pinch zooms the hospital image in', /PINCH · ZOOM IN/.test(text()), text().slice(0, 240))
-  await push(frameAt(0.3, 0.45))
-  for (let i = 1; i <= 6; i++) await push(frameAt(0.3 + i * 0.09, 0.45))
-  check('horizontal swipe changes the hospital image', /image 2\/3/.test(text()), text().slice(0, 300))
-  check('swipe advanced to second.jpg', (document.querySelector('img[data-xray]') as HTMLImageElement | null)?.getAttribute('data-xray') === 'second.jpg')
+  const fingerFrame = (n: number): VisionFrame => ({
+    ...frameAt(0.5, 0.45, n === 1 ? 'point' : 'other'),
+    features: { orientation_deg: 0, fingers_extended: { thumb: false, index: true, middle: n >= 2, ring: n >= 3, pinky: false } },
+  })
+  const holdFingers = async (n: number, frames = 16) => {
+    for (let i = 0; i < frames; i++) await push(fingerFrame(n))
+  }
+  await push(fingerFrame(2))
+  check('finger-count chips are shown and the hold is announced', /2 fingers · image 2/.test(text()) && /HOLD 2 FINGERS/.test(text()), text().slice(0, 300))
+  await holdFingers(2)
+  check('holding 2 fingers switches to the second X-ray', /image 2\/3/.test(text()), text().slice(0, 300))
+  check('2 fingers loaded second.jpg', (document.querySelector('img[data-xray]') as HTMLImageElement | null)?.getAttribute('data-xray') === 'second.jpg')
   const secondXray = document.querySelector('img[data-xray]') as HTMLImageElement | null
   await act(async () => {
     secondXray?.dispatchEvent(new Event('error'))
     await sleep(80)
   })
   check('a missing X-ray file shows a setup hint, not a broken image', /No image at \/assets\/xray\/second\.jpg/.test(text()), text().slice(0, 300))
+  await holdFingers(3)
+  check('holding 3 fingers switches to the third X-ray', /image 3\/3/.test(text()) && (document.querySelector('img[data-xray]') as HTMLImageElement | null)?.getAttribute('data-xray') === 'third.jpg', text().slice(0, 260))
+  await holdFingers(1)
+  check('holding 1 finger returns to the first X-ray', /image 1\/3/.test(text()) && (document.querySelector('img[data-xray]') as HTMLImageElement | null)?.getAttribute('data-xray') === 'first.jpg', text().slice(0, 260))
+  await push(frameAt(0.3, 0.45))
+  for (let i = 1; i <= 6; i++) await push(frameAt(0.3 + i * 0.09, 0.45))
+  check('open-palm swipe no longer pages the hospital images', /image 1\/3/.test(text()) && (document.querySelector('img[data-xray]') as HTMLImageElement | null)?.getAttribute('data-xray') === 'first.jpg', text().slice(0, 300))
   await push(frameAt(0.5, 0.45, 'point'))
   await push(frameAt(0.6, 0.52, 'point'))
   check('point-drag pans without issuing a command', /POINT-DRAG · PAN/.test(text()) && S().log.length === logBefore && JSON.stringify(S().devices) === devicesBefore)

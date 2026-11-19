@@ -60,7 +60,7 @@ export const HOSPITAL_MODE: ModeDefinition = {
   checklist: [
     'Confirm fictional patient identity on screen',
     'Review the demo observation summary',
-    'Open the local X-ray panel and swipe once',
+    'Open the local X-ray panel and hold up 2 fingers once',
     'Check the demonstration task list',
     'Record a fictional handover note',
   ],

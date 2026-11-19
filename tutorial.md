@@ -52,7 +52,7 @@ different environment changes zones, controls and demo data — not the engine.
 4. Hold a still **open palm** in the lower area until the activation ring fills.
 5. Move steadily into one of the control zones on the left or right rail and hold still.
 6. When the target shows as selected/ready, **pinch thumb and index** to confirm.
-7. Open **Signature screen** from the toolbar to practise the view gestures (zoom, pan, rotate, swipe).
+7. Open **Signature screen** from the toolbar to practise the view gestures (zoom, pan, rotate, swipe, finger-count pages).
 8. Open **Hardware** to exercise the two physical outputs individually, or **Digital Twin** to watch the
    full ACK → read-back lifecycle. `docs/HARDWARE.md` covers wiring, flashing and the serial protocol.
 
@@ -132,7 +132,8 @@ is labelled **same camera**.
 | **Open palm, held still** | **Zoom out** | The palm must be still for about 0.22 s. A moving open palm is treated as a swipe. |
 | **Fist, rotated** | **Rotate** the object camera | Used where rotation is available (industrial). Also rotates the industrial dashboard diagram. |
 | **Point + drag** | **Pan** | Move the index-pointing hand. |
-| **Open-palm horizontal swipe** | Change image / page repair or preparation steps | Movement must exceed the swipe threshold; a still open hand is zoom-out instead. |
+| **Open-palm horizontal swipe** | Change image / page repair or preparation steps (camera modes) | Movement must exceed the swipe threshold; a still open hand is zoom-out instead. Hospital pages use finger counts instead. |
+| **Hold up 1, 2 or 3 fingers** | Hospital X-ray pages | Hold still for about 0.55 s: 1 = `first.jpg`, 2 = `second.jpg`, 3 = `third.jpg`. Pinch, fist and open palm are ignored. |
 
 ### 4.2 The pinch / open-hand clutch
 
@@ -178,7 +179,7 @@ Zoom is limited to **1–5×** on the camera signature views (**3.6×** on the h
 - **Digital controls:** Patient overview, Clinical records, Imaging viewer, Task checklist, Procedure
   step, Workstation timer, Request assistance.
 - **Physical:** Workstation/shared LED.
-- **Signature:** local X-ray viewer (`public/assets/xray/first.jpg`, `second.jpg`, `third.jpg`) — open-palm swipe changes image, point-drag pans, pinch zooms
+- **Signature:** local X-ray viewer (`public/assets/xray/first.jpg`, `second.jpg`, `third.jpg`) — hold up **1 / 2 / 3 fingers** to jump to the matching image, point-drag pans, pinch zooms
   in, still open hand zooms out. The image is explicitly fictional and not diagnostic.
 - No real patient record, medical device or hospital system is connected.
 
@@ -330,7 +331,8 @@ same selection and confirmation pipeline.
 | Pinch does not confirm | Make a **new** pinch after selection; hold about 0.2 s; check confirmation timeout and gesture mapping. |
 | Fist cancels unexpectedly | A closed fist is the cancel gesture. Keep fingers relaxed/open outside the deliberate cancel. |
 | Signature zoom-out will not start | Open-palm zoom-out is disarmed after a pinch. Make a brief fist or point, then hold the open palm still. |
-| Open-palm swipe zooms instead of paging | Zoom-out requires a still palm; swipe decisively with horizontal movement. |
+| Open-palm swipe zooms instead of paging | Zoom-out requires a still palm; swipe decisively with horizontal movement. In the hospital X-ray view, swipe is disabled — use 1, 2 or 3 fingers or the ‹ › buttons. |
+| Fingers do not change the hospital image | Hold the pose still for ~0.55 s with the hand fully visible, keep the palm stable, and make sure the count is 1–3 (thumb is ignored). A pinch (two fingers touching) is a zoom, not a page. |
 | Pinch zoom is too slow/fast | Zoom is rate-based; hold longer or shorter. There is no distance threshold to fight. |
 | Fist rotation seems dead | Show a clear closed fist and rotate the wrist; open-hand wrist twist no longer rotates. |
 | Signature gestures pause | They pause during an in-flight Intent Engine selection/confirmation/execution. The signature overlay's local runtime also pauses the engine while open. |
@@ -358,7 +360,8 @@ SIGNATURE
   Fist or point, then open    re-arm zoom-out after a pinch
   Fist, rotate                rotate object camera
   Point, drag                 pan object camera
-  Open-palm horizontal swipe  change image / page steps
+  Open-palm horizontal swipe  change image / page steps (camera modes)
+  1 / 2 / 3 fingers, held     hospital X-ray page (first/second/third.jpg)
   Reset view                  restore 1x, centre, 0 degrees
 
 FOOD SIGNATURE

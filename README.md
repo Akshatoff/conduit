@@ -51,8 +51,8 @@ camera for space.
 
 Each environment also has a **Signature screen** (toolbar toggle, or open the dashboard). Hospital keeps
 a local X-ray viewer you supply images for — drop `first.jpg`, `second.jpg` and `third.jpg` into
-[`public/assets/xray/`](public/assets/xray/README.md) and swipe between them with an open palm (or the
-prev/next buttons). The files are served at `/assets/xray/...` by Vite in dev, copied into `dist/` on build,
+[`public/assets/xray/`](public/assets/xray/README.md) and jump between them by **holding up 1, 2 or 3
+fingers** (1 = `first.jpg`, 2 = `second.jpg`, 3 = `third.jpg`), or with the prev/next buttons. The files are served at `/assets/xray/...` by Vite in dev, copied into `dist/` on build,
 and served straight from `public/assets/` by the backend, so you can add images without rebuilding while the
 Python backend is running. Every other environment shows **two cameras**:
 
@@ -74,12 +74,13 @@ hand distance:
   cannot undo it; the hint says `FIST OR POINT · RE-ARM ZOOM OUT`.
 - **Fist, rotated** → rotate the object camera.
 - **Point + drag** → pan.
-- **Open-palm swipe** → change image / page steps (movement is reserved for the swipe, so a still open
-  hand is needed for zoom-out).
+- **Open-palm swipe** → change image / page steps in the camera modes. Movement is reserved for the swipe,
+  so a still open hand is needed for zoom-out.
+- **Hold up 1 / 2 / 3 fingers** → hospital X-ray page (`first.jpg`, `second.jpg`, `third.jpg`).
 
 | Environment | Problem it demonstrates | Signature interaction | Hardware |
 |---|---|---|---|
-| **Hospital / clinical** | Accessing information while hands are occupied, without repeatedly touching a shared screen | Fictional patient overview / records; pinch zooms in, open hand zooms out, point-drag pans, open-palm swipe changes image; checklist, timer, assistance request | shared LED |
+| **Hospital / clinical** | Accessing information while hands are occupied, without repeatedly touching a shared screen | Fictional patient overview / records; hold up 1, 2 or 3 fingers to choose the matching local X-ray, pinch zooms in, open hand zooms out, point-drag pans; checklist, timer, assistance request | shared LED |
 | **Semiconductor / cleanroom** | Following process instructions and inspection data with gloved hands | 5-stage simulated wafer flow; **Signature screen: CAM 1 tracks hands, CAM 2 zooms/pans the object camera** with pinch/open-hand and point-drag; defect categories, wafer dashboard, records, equipment | LED status, servo model access |
 | **Industrial maintenance** | Reading procedures and recording findings while holding tools | Equipment readings, digital manual, inspection checklist, maintenance timer, fault report + assistance; **Signature screen rotates/zooms the CAM 2 object camera** with fist rotation, pinch/open-hand zoom, point-drag pan and swipe paging | LED indicator, servo service latch |
 | **Food processing** | Following recipes and timers without touching a shared screen | Three fictional recipes, ingredient quantities, preparation steps, cooking timer, QC checklist, order board; **Signature screen shows CAM 1 + CAM 2** while a circular hand motion sets the timer, pinch starts/pauses and lower-edge swipe pages steps | shared LED |
@@ -176,7 +177,7 @@ The full staged sequence is in [`docs/MODES.md`](docs/MODES.md#recommended-judge
 5. **Semiconductor:** change environment (camera keeps running). Advance a process stage, open the fictional
    wafer inspection, switch defect category, confirm a simulated record, then toggle **EQUIP LED** and
    **ACCESS**; show the mode indicators on the Twin page (`node` vs `ui`).
-6. **Signature screens:** open **Signature screen** in each environment. Hospital swipes through the local X-ray images (`first.jpg`, `second.jpg`, `third.jpg`).
+6. **Signature screens:** open **Signature screen** in each environment. Hospital holds up 1, 2 or 3 fingers to load `first.jpg`, `second.jpg` or `third.jpg`.
    Everywhere else you get CAM 1 (gesture tracking with landmarks) and CAM 2 (the object camera), each
    labelled. Point CAM 2 at the object and perform the gesture — pinch zoom, open-hand zoom-out, fist rotation, point-drag pan, large
    magnifier buttons — while CAM 1 stays raw. Food keeps both cameras visible and sets the timer by circling.

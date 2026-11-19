@@ -4,6 +4,8 @@ from backend.vision.landmarks import PositionSmoother, extract_features
 from backend.vision.synthetic import make_hand
 
 
+# Two- and three-finger poses are not named gestures (they classify as "other") but the hospital
+# X-ray paging reads their finger count directly; see test_finger_counts_are_extractable_for_held_up_fingers.
 @pytest.mark.parametrize("gesture", ["open_palm", "pinch", "fist", "point"])
 def test_gesture_classification_on_synthetic_hands(gesture):
     f = extract_features(make_hand(gesture, 0.5, 0.5))
@@ -63,3 +65,14 @@ def test_feature_dict_exposes_landmarks_for_the_optional_second_hand():
     assert len(d["landmarks"]) == 21
     assert d["landmarks"][0] == f.landmarks[0]
     assert d["handedness"] == "Left"
+
+
+@pytest.mark.parametrize("gesture,count", [("point", 1), ("two_fingers", 2), ("three_fingers", 3)])
+def test_finger_counts_are_extractable_for_held_up_fingers(gesture, count):
+    f = extract_features(make_hand(gesture, 0.5, 0.5))
+    n = sum(bool(f.fingers_extended[k]) for k in ("index", "middle", "ring", "pinky"))
+    assert n == count
+    assert not f.fingers_extended["thumb"]
+    if count > 1:
+        assert f.gesture == "other"
+        assert f.pinch_distance > 0.3

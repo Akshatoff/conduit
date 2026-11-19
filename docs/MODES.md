@@ -61,7 +61,7 @@ no `action` behave exactly as before (all original tests still pass).
 ### View-only signature interactions
 
 Each environment adds a **Signature screen** on top of the unchanged pipeline. It consumes the primary
-hand plus an optional second hand and drives *view state only*: hospital swipes through the local X-ray images, while
+hand plus an optional second hand and drives *view state only*: hospital holds up 1–3 fingers to choose an X-ray image, while
 semiconductor, industrial, food and accessibility show **two camera panes**. CAM 1 is the gesture camera
 (the exact stream MediaPipe tracks, drawn with landmarks); CAM 2 is a separately selected physical camera
 pointed at the object, and only CAM 2 is zoomed, panned, rotated or magnified. CAM 1 is the larger pane
@@ -101,7 +101,7 @@ actions are authorised, per-mode interaction history and a **Reset demo** action
 
 ### Mode A — Hospital / clinical workstation
 * Fictional patients (`DEMO-0001…`), clearly labelled demo vitals and records.
-* X-ray panel: horizontal swipe changes image (`first.jpg` → `second.jpg` → `third.jpg`, from `public/assets/xray/`), point-drag pans, pinch zooms in, open hand zooms out.
+* X-ray panel: hold up 1, 2 or 3 fingers to load `first.jpg`, `second.jpg` or `third.jpg` (from `public/assets/xray/`); point-drag pans, pinch zooms in, open hand zooms out. Horizontal swipe is deliberately not bound here.
 * Checklist + procedure navigation, non-clinical timer, simulated assistance request.
 * **No** real patient records, diagnosis, medical-device control or certified healthcare claim.
 
@@ -183,8 +183,8 @@ local databases.
 2. **Hospital** — enter; point out the fictional-data banner, the two control rails and the central approach corridor.
    * Start camera (or pointer simulator).
    * Hold open palm → activation ring; select **OVERVIEW** (dwell + confidence), pinch → panel opens (digital ACK).
-   * Select **IMAGING**, pinch → the imaging panel opens. Toggle **Signature screen**; swipe to change the
-     X-ray image, point-drag to pan, pinch to zoom in, hold an open hand still to zoom out. Every action still requires the engine.
+   * Select **IMAGING**, pinch → the imaging panel opens. Toggle **Signature screen**; hold up 1, 2 or 3
+     fingers to load the matching X-ray image, point-drag to pan, pinch to zoom in, hold an open hand still to zoom out. Every action still requires the engine.
    * **Accident:** sweep a hand across both rails → `TRANSIT` rejection, no change; show the interaction history.
    * Start the **timer** by gesture; show the Digital Twin `hospital.timer` UI state.
 3. **Semiconductor** — switch environment (camera keeps running).
@@ -231,7 +231,8 @@ local databases.
   Settings list contains only one camera, the browser is exposing one device — connect the other camera,
   close apps using it, and press **Refresh** (which briefly probes camera permission).
 * Signature gestures are pose-based and one-handed: **pinch** = zoom in, **still open palm** = zoom out,
-  **fist rotation** = rotate, **point-drag** = pan, **open-palm swipe** = change image/page. Food remains
+  **fist rotation** = rotate, **point-drag** = pan, **open-palm swipe** = change image/page (hospital X-rays
+  page by held finger count instead). Food remains
   usable one-handed; accessibility also exposes large buttons.
 * Open-palm zoom-out disarms after a pinch until the hand passes through a fist/point reset. This prevents
   releasing a pinch from immediately reversing it; the HUD hint shows `FIST OR POINT · RE-ARM ZOOM OUT`.
