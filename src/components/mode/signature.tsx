@@ -3,7 +3,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { CONTENT_ITEMS } from '../../modes/accessibility/demoData'
 import { RECIPES } from '../../modes/food/demoData'
 import { MANUAL_STEPS, MACHINE_COMPONENTS } from '../../modes/industrial/demoData'
-import { clamp, useCircularGesture, useFistRotation, useHorizontalSwipe, usePoseZoom, usePointDrag, useSignatureCamera, useSignatureHands } from '../../modes/signature'
+import { clamp, useCircularGesture, useFingerSelect, useFistRotation, useHorizontalSwipe, usePoseZoom, usePointDrag, useSignatureCamera, useSignatureHands } from '../../modes/signature'
 import type { PoseZoomState } from '../../modes/signature'
 import { HAND_CONNECTIONS } from '../../core/landmarks'
 import { readObjectCameraId, subscribeObjectCamera, writeObjectCameraId } from '../../objectCamera'
@@ -135,21 +135,32 @@ export function HospitalImaging({ compact = false }: { compact?: boolean }) {
   const zoomPose = usePoseZoom((factor) => setZoom((z) => clamp(z * factor, 1, 3.6)), hands.ready)
   const gesture = zoomPose.gesture ? zoomPose.gesture.replace('_', ' ').toUpperCase() : null
 
+  const showPage = (zeroBased: number) => {
+    setIndex(zeroBased)
+    // A new image means a fresh view: keep zoom/pan from drifting between studies.
+    setZoom(1)
+    setPan({ x: 0, y: 0 })
+  }
+
   const step = (dir: number) => {
-    setIndex((i) => (i + dir + XRAY_IMAGES.length) % XRAY_IMAGES.length)
+    showPage((current + dir + XRAY_IMAGES.length) % XRAY_IMAGES.length)
     setHint(dir > 0 ? 'NEXT IMAGE' : 'PREVIOUS IMAGE')
   }
 
-  useHorizontalSwipe(
-    (dir) => {
-      // A new image means a fresh view: keep zoom/pan from drifting between studies.
-      setZoom(1)
-      setPan({ x: 0, y: 0 })
-      step(dir)
-      setHint(dir > 0 ? 'SWIPE → NEXT IMAGE' : 'SWIPE ← PREVIOUS IMAGE')
+  // Hospital pages by finger count: 1 finger = first image, 2 = second, 3 = third.
+  const fingers = useFingerSelect(
+    (n) => {
+      showPage(n - 1)
+      setHint(`HELD ${n} FINGER${n > 1 ? 'S' : ''} · IMAGE ${n}`)
     },
     hands.ready,
   )
+  const fingerHint =
+    fingers.count == null
+      ? ''
+      : fingers.progress >= 1
+        ? `${fingers.count} FINGER${fingers.count > 1 ? 'S' : ''} · IMAGE ${fingers.count}`
+        : `HOLD ${fingers.count} FINGER${fingers.count > 1 ? 'S' : ''}…`
   usePointDrag(
     (dx, dy) => {
       setPan((p) => ({ x: clamp(p.x + dx * 1.5, -0.38, 0.38), y: clamp(p.y + dy * 1.5, -0.38, 0.38) }))
@@ -184,7 +195,6 @@ export function HospitalImaging({ compact = false }: { compact?: boolean }) {
         </div>
         <div className="pointer-events-none absolute left-3 top-3 flex flex-wrap gap-1.5">
           <PoseGuide zoom={zoomPose} />
-          <GestureChip active={hands.primary?.gesture === 'open_palm'}>swipe image</GestureChip>
         </div>
         <div className="pointer-events-none absolute right-3 top-3 rounded-md border border-line/70 bg-bg/80 px-2 py-1 text-right font-mono text-[10px] text-ink/80 backdrop-blur">
           {study.id}<br />
@@ -201,11 +211,18 @@ export function HospitalImaging({ compact = false }: { compact?: boolean }) {
             ))}
           </div>
         </div>
-        {!hands.primary && <NoHand>Open the imaging control with the Intent Engine first, then move an open palm horizontally to swipe. Point-drag to pan; pinch to zoom in; hold an open hand still to zoom out.</NoHand>}
+        {!hands.primary && <NoHand>Open the imaging control with the Intent Engine first, then hold up 1, 2 or 3 fingers to choose an image. Point-drag to pan; pinch to zoom in; hold an open hand still to zoom out.</NoHand>}
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        <GestureChip active={!!hint}>{hint || (gesture ? `${gesture} · ACTIVE` : 'WAITING FOR HAND')}</GestureChip>
-        <span className="text-[10px] text-muted">Open-palm swipe changes image · point-drag pans · pinch zooms in · open hand zooms out</span>
+        <span className="flex items-center gap-1" aria-label="Hold up 1, 2 or 3 fingers to choose an image">
+          {[1, 2, 3].map((n) => (
+            <GestureChip key={n} active={fingers.count === n}>
+              {n} finger{n > 1 ? 's' : ''} · image {n}
+            </GestureChip>
+          ))}
+        </span>
+        <GestureChip active={!!(fingerHint || hint)}>{fingerHint || hint || (gesture ? `${gesture} · ACTIVE` : 'WAITING FOR HAND')}</GestureChip>
+        <span className="text-[10px] text-muted">Hold 1–3 fingers to switch image · point-drag pans · pinch zooms in · open hand zooms out</span>
         <div className="ml-auto flex items-center gap-1">
           <button aria-label="Previous image" onClick={() => step(-1)} className="rounded border border-line p-0.5 text-muted hover:text-ink">
             <ChevronLeft className="size-3.5" />
@@ -220,8 +237,9 @@ export function HospitalImaging({ compact = false }: { compact?: boolean }) {
       </div>
       {!compact && (
         <ScreenNote>
-          View navigation only — every mode action still requires the Intent Engine. Images are local files you provide
-          (public/assets/xray), never fetched from a medical system, and shown for demonstration only.
+          View navigation only — every mode action still requires the Intent Engine. Hold 1, 2 or 3 fingers to choose
+          the matching X-ray file (public/assets/xray/first|second|third.jpg); images are local files, never fetched from
+          a medical system, and shown for demonstration only.
         </ScreenNote>
       )}
     </div>

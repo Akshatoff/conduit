@@ -77,6 +77,73 @@ export function useHorizontalSwipe(onSwipe: (dir: 1 | -1) => void, enabled: bool
   }, [x, t, eligible, threshold, cooldownMs])
 }
 
+// Finger-count paging. Holding up 1, 2 or 3 fingers chooses a page directly.
+//
+// Counting uses the per-finger extension flags the landmark extractor already produces, so it works
+// with the same frames as the rest of the signature layer. Pinch, fist and open palm are excluded:
+// a pinch curls the index finger and would otherwise look like a three-finger pose, which would
+// fight the zoom gesture.
+export const FINGER_HOLD_S = 0.55
+export const FINGER_MAX_SPEED = 0.35
+
+export type FingerCount = 1 | 2 | 3
+
+export function countExtendedFingers(frame: VisionFrame | null): FingerCount | null {
+  if (!frame?.hand_detected) return null
+  if (frame.gesture === 'pinch' || frame.gesture === 'fist' || frame.gesture === 'open_palm') return null
+  const ext = frame.features?.fingers_extended
+  if (!ext) return null
+  const n = ['index', 'middle', 'ring', 'pinky'].reduce((acc, f) => acc + (ext[f] ? 1 : 0), 0)
+  return n === 1 || n === 2 || n === 3 ? (n as FingerCount) : null
+}
+
+export interface FingerSelectState {
+  /** Finger count currently held (1..3), or null when the pose is not a page gesture. */
+  count: FingerCount | null
+  /** 0..1 hold progress before the page is committed. */
+  progress: number
+}
+
+/**
+ * Hold 1, 2 or 3 fingers to pick a page. The pose must stay reasonably still (a deliberate swipe or
+ * pan runs faster than FINGER_MAX_SPEED, so it cannot page by accident) and is only committed once
+ * per hold, so keeping a finger up cannot re-page repeatedly.
+ */
+export function useFingerSelect(onSelect: (count: FingerCount) => void, enabled: boolean, holdS = FINGER_HOLD_S): FingerSelectState {
+  const hands = useSignatureHands()
+  const cb = useRef(onSelect)
+  cb.current = onSelect
+  const count = enabled ? countExtendedFingers(hands.frame) : null
+  const t = hands.frame?.timestamp ?? 0
+  const speed = hands.frame?.velocity ?? 0
+  const state = useRef({ count: 0, since: 0, committed: 0 })
+  const [progress, setProgress] = useState(0)
+
+  useEffect(() => {
+    const s = state.current
+    if (count == null || !enabled || speed > FINGER_MAX_SPEED) {
+      s.count = 0
+      s.since = 0
+      s.committed = 0
+      setProgress(0)
+      return
+    }
+    if (s.count !== count) {
+      s.count = count
+      s.since = t
+      s.committed = 0
+    }
+    const p = clamp((t - s.since) / holdS, 0, 1)
+    setProgress(p)
+    if (p >= 1 && s.committed !== count) {
+      s.committed = count
+      cb.current(count)
+    }
+  }, [count, t, speed, enabled, holdS])
+
+  return { count, progress }
+}
+
 // Pose-based zoom. The gesture *pose* selects the action, not the distance between two hands:
 // pinch (thumb + index) zooms in, an open palm zooms out. Open-palm zoom-out is disarmed after a
 // pinch until the hand passes through a fist/point reset, so releasing a pinch cannot undo it.

@@ -15,8 +15,9 @@ They are served at `/assets/xray/<name>` by:
 * **Python backend** — `/assets` is mounted straight from this folder, so images added while the backend
   runs appear on reload without rebuilding.
 
-Swipe an open palm horizontally in the hospital **Signature screen** (or use the prev/next buttons) to move
-between them. Files are loaded from your own machine only — nothing is fetched from a medical system.
+In the hospital **Signature screen**, hold up **1, 2 or 3 fingers** (steadily, for about 0.55 s) to load the
+matching file — 1 = `first.jpg`, 2 = `second.jpg`, 3 = `third.jpg`. The ‹ › buttons do the same thing without a
+camera. Files are loaded from your own machine only — nothing is fetched from a medical system.
 
 Only use images you are allowed to handle (ideally anonymised). The viewer is a demonstration of gesture
 navigation and is **not** diagnostic.

@@ -14,6 +14,12 @@ EXTENDED = [(0.0, 0.45), (0.0, 0.72), (0.0, 0.94)]    # pip, dip, tip offsets fr
 CURLED = [(0.0, 0.35), (0.0, 0.20), (0.0, -0.05)]
 POINT_IDX = EXTENDED
 
+# Explicit finger counts, used to test the hospital "hold up 1/2/3 fingers" paging without a camera.
+FINGER_POSES = {
+    "two_fingers": ("index", "middle"),
+    "three_fingers": ("index", "middle", "ring"),
+}
+
 THUMB_OPEN = [(-0.30, 0.20), (-0.50, 0.45), (-0.70, 0.65), (-0.88, 0.82)]
 THUMB_FIST = [(-0.30, 0.20), (-0.40, 0.40), (-0.30, 0.60), (-0.10, 0.70)]
 THUMB_PINCH = [(-0.30, 0.20), (-0.50, 0.50), (-0.65, 0.90), (-0.60, 1.40)]
@@ -22,7 +28,7 @@ INDEX_PINCH = [(-0.33, 1.40), (-0.42, 1.62), (-0.50, 1.55)]  # absolute pip, dip
 
 def _local_hand(gesture: str) -> List[Tuple[float, float]]:
     pts: List[Tuple[float, float]] = [(0.0, 0.0)]
-    thumb = {"open_palm": THUMB_OPEN, "pinch": THUMB_PINCH, "fist": THUMB_FIST, "point": THUMB_FIST}.get(gesture, THUMB_OPEN)
+    thumb = {"open_palm": THUMB_OPEN, "pinch": THUMB_PINCH, "fist": THUMB_FIST, "point": THUMB_FIST}.get(gesture, THUMB_FIST if gesture in FINGER_POSES else THUMB_OPEN)
     pts += thumb
     for name in ("index", "middle", "ring", "pinky"):
         mx, my = MCP[name]
@@ -34,7 +40,7 @@ def _local_hand(gesture: str) -> List[Tuple[float, float]]:
                 "pinch": True,
                 "fist": False,
                 "point": name == "index",
-            }.get(gesture, True)
+            }.get(gesture, name in FINGER_POSES.get(gesture, ()))
             offs = EXTENDED if ext else CURLED
             seq = [(mx, my)] + [(mx + dx, my + dy) for dx, dy in offs]
         pts += seq
