@@ -23,7 +23,7 @@ from .scenarios import Driver
 DIGITAL_ZONE = Zone(id="semi.stage", label="Process stage", device="semi.stage",
                     x0=0.58, y0=0.42, x1=0.97, y1=0.56, action="ADVANCE_STAGE", kind="digital",
                     hint="Advance the simulated process stage")
-PHYSICAL_ZONE = Zone(id="semi.equipment", label="Equipment status LED", device="lighting",
+PHYSICAL_ZONE = Zone(id="semi.equipment", label="Equipment status light", device="torch",
                      x0=0.03, y0=0.055, x1=0.42, y1=0.20, kind="physical")
 
 CX = (DIGITAL_ZONE.x0 + DIGITAL_ZONE.x1) / 2
@@ -76,8 +76,8 @@ def mode_client():
 # ------------------------------------------------------------------ config
 def test_explicit_zone_action_overrides_toggle():
     assert toggle_action("semi.stage", None, "ADVANCE_STAGE") == "ADVANCE_STAGE"
-    assert toggle_action("lighting", "OFF") == "ON"
-    assert toggle_action("access", "UNLOCKED") == "LOCK"
+    assert toggle_action("torch", "OFF") == "ON"
+    assert toggle_action("screen", "ON") == "OFF"
 
 
 def test_engine_with_mode_zones_uses_explicit_action():

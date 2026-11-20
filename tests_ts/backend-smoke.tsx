@@ -22,19 +22,21 @@ async function main() {
   await act(async () => root.render(<App />))
   await act(async () => sleep(1500))
   check('backend detected', S().runtimeKind === 'backend', S().runtimeKind)
-  check('websocket open + snapshot loaded', S().link === 'open' && Object.keys(S().devices).length === 2, `${S().link} ${Object.keys(S().devices)}`)
+  check('websocket open + snapshot loaded', S().link === 'open' && Object.keys(S().devices).length === 3, `${S().link} ${Object.keys(S().devices)}`)
   check('zones + settings loaded from backend', S().zones.length >= 2 && S().settings.intent.min_confidence > 0)
 
-  await act(async () => { await rt().testDevice('lighting', 'ON'); await sleep(500) })
-  check('manual test: twin updated via WebSocket after ack + read-back', S().devices.lighting.confirmed_state === 'ON' && S().devices.lighting.last_command?.source === 'manual_test' && S().devices.lighting.simulated === true, JSON.stringify(S().devices.lighting))
+  await act(async () => { await rt().testDevice('screen', 'ON'); await sleep(500) })
+  check('manual test: screen twin updated via WebSocket after read-back', S().devices.screen.confirmed_state === 'ON' && S().devices.screen.last_command?.source === 'manual_test' && S().devices.screen.simulated === true && S().devices.screen.verified === true, JSON.stringify(S().devices.screen))
+  await act(async () => { await rt().testDevice('torch', 'ON'); await sleep(500) })
+  check('torch manual test goes through the same ACK path', S().devices.torch.confirmed_state === 'ON' && S().devices.torch.last_ack?.status === 'ACKNOWLEDGED' && S().devices.torch.last_ack?.verified === true && S().devices.torch.simulated === true, JSON.stringify(S().devices.torch))
   check('command lifecycle logged', S().log.some((l) => l.code === 'SENT') && S().log.some((l) => l.code === 'ACK') && S().log.some((l) => l.code === 'CONFIRMED'), JSON.stringify(S().log.map((l) => l.code)))
 
   await act(async () => { await rt().simulateFault(true); await sleep(300) })
-  check('link failure shown in twin', S().devices.access.connection === 'disconnected' && S().devices.access.confirmed_state === 'UNKNOWN')
-  await act(async () => { await rt().testDevice('access', 'UNLOCK'); await sleep(500) })
-  check('command during failure -> DISCONNECTED, no ack', S().devices.access.last_ack === null && S().log.some((l) => l.code === 'DISCONNECTED'))
+  check('link failure shown in twin', S().devices.vibration.connection === 'disconnected' && S().devices.vibration.confirmed_state === 'UNKNOWN')
+  await act(async () => { await rt().testDevice('vibration', 'ON'); await sleep(500) })
+  check('command during failure -> DISCONNECTED, no ack', S().devices.vibration.last_ack === null && S().log.some((l) => l.code === 'DISCONNECTED'), JSON.stringify(S().devices.vibration))
   await act(async () => { await rt().simulateFault(false); await sleep(300) })
-  check('link restored', S().devices.access.connection === 'simulated')
+  check('link restored', S().devices.vibration.connection === 'simulated')
 
   await act(async () => { await rt().startVision(); await sleep(1500) })
   check('camera stack failure surfaces as error state (no crash)', S().camera.state === 'error' && !!S().camera.error, JSON.stringify(S().camera))
@@ -57,7 +59,7 @@ async function main() {
   check('activate over WebSocket -> intent state', S().log.some((l) => l.title === 'Interaction activated'))
 
   await act(async () => { await rt().setHardwareMode('hardware'); await sleep(300) })
-  check('hardware mode without a serial port: disconnected/UNKNOWN', S().hardwareMode === 'hardware' && S().devices.access.connection === 'disconnected' && S().devices.access.confirmed_state === 'UNKNOWN')
+  check('hardware mode without adb to the phone: disconnected/UNKNOWN', S().hardwareMode === 'hardware' && S().devices.screen.connection === 'disconnected' && S().devices.screen.confirmed_state === 'UNKNOWN')
   await act(async () => { await rt().setHardwareMode('simulation'); await sleep(300) })
   check('back to simulation', S().hardwareMode === 'simulation')
 

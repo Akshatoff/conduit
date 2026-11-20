@@ -63,7 +63,7 @@ def svc():
 
 def test_session_requires_start_and_valid_labels(svc):
     with pytest.raises(RuntimeError):
-        svc.start_trial("intended", "lighting")
+        svc.start_trial("intended", "torch")
     svc.start_session("conduit")
     with pytest.raises(ValueError):
         svc.start_trial("intended", None)
@@ -75,10 +75,10 @@ def test_session_requires_start_and_valid_labels(svc):
 
 def test_trial_recording_and_summary_and_csv(svc):
     svc.start_session("conduit")
-    svc.start_trial("intended", "lighting", "deliberate")
+    svc.start_trial("intended", "torch", "deliberate")
     svc.record_engine_latency(2.0)
     svc.record_intent_event({"kind": "confirmation_required", "reason_code": "AWAITING_CONFIRMATION"})
-    svc.record_command({"status": "CONFIRMED", "device": "lighting", "action": "ON", "acknowledged": True, "latency_ms": 120.0})
+    svc.record_command({"status": "CONFIRMED", "device": "torch", "action": "ON", "acknowledged": True, "latency_ms": 120.0})
     svc.end_trial()
     svc.start_trial("unintended", None, "swipe")
     svc.record_intent_event({"kind": "rejected", "reason_code": "TRANSIT"})
@@ -100,8 +100,8 @@ def test_summary_empty_state_has_no_data(svc):
 
 def test_wrong_device_is_not_counted_correct(svc):
     svc.start_session("baseline")
-    svc.start_trial("intended", "lighting")
-    svc.record_command({"status": "CONFIRMED", "device": "access", "action": "UNLOCK", "acknowledged": True, "latency_ms": 50.0})
+    svc.start_trial("intended", "torch")
+    svc.record_command({"status": "CONFIRMED", "device": "screen", "action": "OFF", "acknowledged": True, "latency_ms": 50.0})
     svc.end_trial()
     m = svc.stop_session()["metrics"]
     assert m["accepted"] == 1 and m["successful_deliberate"] == 0

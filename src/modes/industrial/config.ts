@@ -9,8 +9,8 @@ const controls: ModeControl[] = [
   { id: 'industrial.fault', device: 'industrial.fault', label: 'Report fault', short: 'FAULT', kind: 'digital', action: 'REPORT_FAULT', hint: 'Raise a simulated fault report (no CMMS contact).' },
   { id: 'industrial.timer', device: 'industrial.timer', label: 'Maintenance timer', short: 'TIMER', kind: 'digital', action: 'TOGGLE_TIMER', hint: 'Start or pause the maintenance timer.' },
   { id: 'industrial.assist', device: 'industrial.assist', label: 'Request assistance', short: 'ASSIST', kind: 'digital', action: 'REQUEST_ASSIST', hint: 'Send a simulated assistance request.' },
-  { id: 'industrial.indicator', device: 'lighting', label: 'Equipment indicator', short: 'EQUIP LED', kind: 'physical', hint: 'Low-voltage LED representing operating state.' },
-  { id: 'industrial.access', device: 'access', label: 'Service access latch', short: 'ACCESS', kind: 'physical', hint: 'SG90 model latch for the demonstration access panel.' },
+  { id: 'industrial.torch', device: 'torch', label: 'Equipment torch', short: 'EQUIP TORCH', kind: 'physical', hint: 'Phone torch representing operating state.' },
+  { id: 'industrial.buzz', device: 'vibration', label: 'Service access buzz', short: 'ACCESS BUZZ', kind: 'physical', hint: 'Phone vibration motor as the demonstration access alert.' },
 ]
 
 export const INDUSTRIAL_MODE: ModeDefinition = {
@@ -30,14 +30,14 @@ export const INDUSTRIAL_MODE: ModeDefinition = {
     'Inspection checklist completion',
     'Maintenance timer and simulated fault report',
     'Simulated assistance request',
-    'Equipment indicator and service access latch on the shared node',
+    'Phone torch indicator and vibration access alert',
     'Maintenance history derived from actual attempts',
   ],
   safety: [
     'No connection to real industrial machinery, PLCs, interlocks or safety systems.',
     'Readings and fault reports are fictional demonstration values.',
     'Isolation and lock-off steps in the demo text are placeholders, not instructions.',
-    'Only the shared low-voltage LED and model servo are actuated.',
+    'Only the phone torch and vibration motor are actuated.',
   ],
   accent: '#f5b942',
   controls,
@@ -67,8 +67,8 @@ export const INDUSTRIAL_MODE: ModeDefinition = {
     { id: 'industrial.unit', name: 'Equipment unit', type: 'digital', source: 'digital', description: 'Simulated asset state and readings. Fictional data.' },
     { id: 'industrial.step', name: 'Procedure step', type: 'digital', source: 'digital', description: 'Current demonstration maintenance step.' },
     { id: 'industrial.fault', name: 'Fault report channel', type: 'digital', source: 'digital', description: 'Simulated report flag; no CMMS or operator is contacted.' },
-    { id: 'industrial.indicator', name: 'Equipment indicator LED', type: 'actuator', source: 'physical', device: 'lighting', description: 'Low-voltage LED; confirmed only after ACK + read-back.' },
-    { id: 'industrial.access', name: 'Service access latch', type: 'actuator', source: 'physical', device: 'access', description: 'Model servo latch; not a machine guard or interlock.' },
+    { id: 'industrial.torch', name: 'Equipment torch', type: 'actuator', source: 'physical', device: 'torch', description: 'Phone rear torch; acknowledged over ADB, no read-back available.' },
+    { id: 'industrial.buzz', name: 'Service access buzz', type: 'actuator', source: 'physical', device: 'vibration', description: 'Phone vibration motor; acknowledged only — never a machine guard or interlock.' },
   ],
   analytics: ['Procedure steps advanced', 'Checklist items completed', 'Fault reports raised', 'Assistance requests', 'Physical ACK rate'],
   panels: ['monitor', 'manual', 'history'],

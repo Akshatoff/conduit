@@ -7,7 +7,8 @@ from backend.intent.engine import InteractionInput
 
 from .scenarios import Driver
 
-LIGHT_X, ACCESS_X = 0.25, 0.81
+TORCH_X, SCREEN_X, VIB_X = 0.19, 0.51, 0.82
+LIGHT_X, ACCESS_X = TORCH_X, SCREEN_X   # historical names, kept for readability below
 
 
 def select_and_await(d: Driver, zone_x=LIGHT_X):
@@ -52,7 +53,7 @@ def test_fist_does_not_activate():
 def test_full_deliberate_interaction_executes_after_confirmation():
     d = Driver()
     select_and_await(d)
-    assert d.engine.target == "lighting" and d.engine.action == "ON"
+    assert d.engine.target == "torch" and d.engine.action == "ON"
     assert d.commands == []                      # selection alone never executes
     sel = d.engine.selection_confidence
     assert sel >= d.engine.cfg.min_confidence
@@ -60,26 +61,26 @@ def test_full_deliberate_interaction_executes_after_confirmation():
     assert d.state == "EXECUTING"
     assert len(d.commands) == 1
     cmd = d.commands[0]
-    assert (cmd.device, cmd.action, cmd.source) == ("lighting", "ON", "conduit_intent_engine")
+    assert (cmd.device, cmd.action, cmd.source) == ("torch", "ON", "conduit_intent_engine")
     assert cmd.confidence >= d.engine.cfg.min_confidence
     d.engine.notify_command_result(True, "Device confirmed ON", d.t)
     assert d.state == "COMPLETED"
 
 
 def test_each_zone_selects_its_device():
-    for x, dev in ((LIGHT_X, "lighting"), (ACCESS_X, "access")):
+    for x, dev in ((TORCH_X, "torch"), (SCREEN_X, "screen"), (VIB_X, "vibration")):
         d = Driver()
         select_and_await(d, x)
         assert d.engine.target == dev
 
 
 def test_action_is_toggle_of_confirmed_device_state():
-    d = Driver(device_states={"lighting": "ON", "access": "LOCKED"})
+    d = Driver(device_states={"torch": "ON", "screen": "OFF"})
     select_and_await(d, LIGHT_X)
     assert d.engine.action == "OFF"
-    d2 = Driver(device_states={"access": "LOCKED"})
-    select_and_await(d2, ACCESS_X)
-    assert d2.engine.action == "UNLOCK"
+    d2 = Driver(device_states={"screen": "OFF"})
+    select_and_await(d2, SCREEN_X)
+    assert d2.engine.action == "ON"
 
 
 def test_every_event_has_a_reason():
@@ -226,7 +227,7 @@ def test_duplicate_command_rejected_inside_window():
     cfg = IntentConfig(cooldown_s=0.1, duplicate_window_s=30.0)
     d = Driver(config=cfg)
     complete_one(d)
-    d.states["lighting"] = "OFF"          # state not confirmed ON (e.g. device unchanged) -> same action again
+    d.states["torch"] = "OFF"          # state not confirmed ON (e.g. device unchanged) -> same action again
     d.move("open_palm", (LIGHT_X, 0.33), (0.5, 0.82), 0.5)   # leave and re-arm
     d.hold("open_palm", 0.5, 0.82, 1.5)
     d.deliberate_select(LIGHT_X, start=(0.5, 0.82))
@@ -240,7 +241,7 @@ def test_second_command_allowed_after_cooldown_and_rearm():
     cfg = IntentConfig(cooldown_s=1.0, duplicate_window_s=0.5)
     d = Driver(config=cfg)
     complete_one(d)
-    d.states["lighting"] = "ON"
+    d.states["torch"] = "ON"
     d.move("open_palm", (LIGHT_X, 0.33), (0.5, 0.82), 0.5)
     d.hold("open_palm", 0.5, 0.82, 1.5)
     d.deliberate_select(LIGHT_X, start=(0.5, 0.82))
@@ -343,5 +344,5 @@ def test_baseline_maps_gestures_directly_without_intent():
     cmds = []
     for i, g in enumerate(["none", "open_palm", "open_palm", "fist"]):
         cmds += b.update(InteractionInput(timestamp=i * 1.5, hand_detected=g != "none", gesture=g))
-    assert [c.device for c in cmds] == ["lighting", "access"]
+    assert [c.device for c in cmds] == ["torch", "vibration"]
     assert all(c.source == "baseline_gesture" for c in cmds)

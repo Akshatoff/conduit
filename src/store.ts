@@ -44,7 +44,17 @@ export interface ConduitState {
   intent: IntentSnapshot
   interactionMode: 'conduit' | 'baseline'
   hardwareMode: 'simulation' | 'hardware'
-  hardwareInfo: { port: string; baud: number; timeout_s: number }
+  hardwareInfo: {
+    adb_path: string
+    serial: string
+    timeout_s: number
+    pulse_ms: number
+    adb?: string | null
+    model?: string | null
+    manufacturer?: string | null
+    android?: string | null
+    capabilities?: { torch?: boolean; vibration?: boolean; screen?: boolean; torch_reason?: string | null } | null
+  }
   devices: Record<string, DeviceTwin>
   zones: Zone[]
   log: LogEntry[]
@@ -72,7 +82,10 @@ export const useConduit = create<ConduitState>(() => ({
   intent: idleSnapshot(),
   interactionMode: 'conduit',
   hardwareMode: 'simulation',
-  hardwareInfo: { port: '', baud: 9600, timeout_s: 2 },
+  hardwareInfo: {
+    adb_path: '', serial: '', timeout_s: 8, pulse_ms: 700,
+    adb: null, model: null, manufacturer: null, android: null, capabilities: null,
+  },
   devices: {},
   zones: defaultSettings().intent.zones,
   log: [],

@@ -9,7 +9,7 @@ const controls: ModeControl[] = [
   { id: 'hospital.procedure', device: 'hospital.procedure', label: 'Procedure step', short: 'PROCEDURE', kind: 'digital', action: 'NEXT_PROCEDURE', hint: 'Advance the demonstration procedure.' },
   { id: 'hospital.timer', device: 'hospital.timer', label: 'Workstation timer', short: 'TIMER', kind: 'digital', action: 'TOGGLE_TIMER', hint: 'Start or pause the non-clinical timer.' },
   { id: 'hospital.assist', device: 'hospital.assist', label: 'Request assistance', short: 'ASSIST', kind: 'digital', action: 'REQUEST_ASSIST', hint: 'Send a simulated assistance request.' },
-  { id: 'hospital.lamp', device: 'lighting', label: 'Workstation lamp', short: 'LAMP', kind: 'physical', hint: 'Shared low-voltage LED output on the demonstration node.' },
+  { id: 'hospital.torch', device: 'torch', label: 'Call torch', short: 'CALL TORCH', kind: 'physical', hint: 'The phone torch as a call indicator, driven over ADB.' },
 ]
 
 export const HOSPITAL_MODE: ModeDefinition = {
@@ -31,7 +31,7 @@ export const HOSPITAL_MODE: ModeDefinition = {
     'Non-clinical workstation timer',
     'Simulated assistance request',
     'Per-attempt interaction history',
-    'Shared low-voltage lamp output',
+    'Phone torch as a call indicator (acknowledged over ADB)',
   ],
   safety: [
     'All patient information in this environment is fictional demonstration data.',
@@ -81,7 +81,7 @@ export const HOSPITAL_MODE: ModeDefinition = {
     { id: 'hospital.display', name: 'Workstation display', type: 'digital', source: 'digital', description: 'Which fictional panel is open. Digital UI state, not a medical device.' },
     { id: 'hospital.timer', name: 'Workstation timer', type: 'digital', source: 'digital', description: 'Non-clinical timer state driven by an authorised selection.' },
     { id: 'hospital.assist', name: 'Assistance channel', type: 'digital', source: 'digital', description: 'Simulated request only — nothing is transmitted to a hospital system.' },
-    { id: 'hospital.lamp', name: 'Workstation lamp', type: 'actuator', source: 'physical', device: 'lighting', description: 'Shared low-voltage LED; state only confirmed after node ACK + read-back.' },
+    { id: 'hospital.torch', name: 'Call torch', type: 'actuator', source: 'physical', device: 'torch', description: 'Phone rear torch. ADB cannot read it back, so the state is acknowledged, never confirmed.' },
   ],
   analytics: ['Panels opened', 'Checklist steps completed', 'Accidental sweeps rejected', 'Assistance requests', 'Intent confidence at confirmation'],
   panels: ['overview', 'records', 'imaging'],

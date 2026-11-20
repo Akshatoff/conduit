@@ -1,6 +1,15 @@
 import type { AppSettings, Zone } from '../core/types'
 
 /** The UI talks only to this interface; it is implemented by the FastAPI backend client and by the in-browser runtime. */
+export interface PhoneInventory {
+  adb: string | null
+  version: string | null
+  devices: { serial: string; state: string; model: string }[]
+  error: string | null
+  hint: string | null
+  configured_serial?: string
+}
+
 export interface Runtime {
   kind: 'backend' | 'browser'
   init(): Promise<void>
@@ -19,8 +28,8 @@ export interface Runtime {
   testDevice(id: string, action: string): Promise<void>
   setHardwareMode(m: 'simulation' | 'hardware'): Promise<void>
   connectHardware(): Promise<void>
-  /** Serial ports visible to the backend (empty in the browser runtime). */
-  listSerialPorts(): Promise<{ device: string; description: string }[]>
+  /** Phones adb can see (the browser runtime can never run adb). */
+  phoneInventory(): Promise<PhoneInventory>
   simulateFault(offline: boolean): Promise<void>
   applySettings(s: AppSettings): Promise<void>
   refreshAnalytics(): Promise<void>

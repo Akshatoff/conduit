@@ -7,7 +7,7 @@ import { getMode } from '../modes/registry'
 import type { ModeId } from '../modes/types'
 import { idleSnapshot, pushLog, useConduit } from '../store'
 import { logCommandEvent, logIntentEvent } from './logging'
-import type { Runtime } from './types'
+import type { PhoneInventory, Runtime } from './types'
 
 const set = useConduit.setState
 const get = useConduit.getState
@@ -74,7 +74,7 @@ export class BackendRuntime implements Runtime {
 
   private async loadSettings() {
     const s = await this.safe(() => this.api<AppSettings>('/api/settings'))
-    if (s) set({ settings: s, zones: s.intent.zones, interactionMode: s.interaction_mode, hardwareMode: s.hardware_mode, hardwareInfo: s.arduino })
+    if (s) set({ settings: s, zones: s.intent.zones, interactionMode: s.interaction_mode, hardwareMode: s.hardware_mode, hardwareInfo: s.phone })
   }
 
   private async loadCameras() {
@@ -120,14 +120,18 @@ export class BackendRuntime implements Runtime {
     const d = env.data
     switch (env.type) {
       case 'snapshot': {
-        const dev = d.devices as { mode: 'simulation' | 'hardware'; devices: DeviceTwin[]; hardware: { port: string; baud: number; timeout_s: number } }
+        const dev = d.devices as {
+          mode: 'simulation' | 'hardware'
+          devices: DeviceTwin[]
+          hardware: { adb: string | null; serial: string; timeout_s: number; model?: string | null; manufacturer?: string | null; android?: string | null; capabilities?: Record<string, unknown> | null }
+        }
         const workspace = typeof d.workspace_mode === 'string' ? d.workspace_mode : get().settings.workspace_mode
         set({
           camera: d.camera as CameraState,
           settings: { ...get().settings, workspace_mode: workspace },
           interactionMode: d.interaction_mode as 'conduit' | 'baseline',
           hardwareMode: dev.mode,
-          hardwareInfo: dev.hardware,
+          hardwareInfo: { ...get().hardwareInfo, ...dev.hardware, adb_path: get().settings.phone.adb_path, pulse_ms: get().settings.phone.pulse_ms },
           devices: Object.fromEntries(dev.devices.map((x) => [x.id, x])),
           zones: (d.zones as never) ?? get().zones,
           intent: (d.intent as IntentSnapshot | null) ?? get().intent,
@@ -246,19 +250,19 @@ export class BackendRuntime implements Runtime {
   }
   async connectHardware() {
     const r = await this.safe(() => this.api<{ connected: boolean }>('/api/hardware/connect', 'POST'))
-    if (r) set({ notice: r.connected ? 'Arduino reachable — device states read back.' : 'Arduino not reachable. In hardware mode no acknowledgement is ever simulated.' })
+    if (r) set({ notice: r.connected ? 'Phone reachable — states read back where adb exposes them.' : 'Phone not reachable. In hardware mode no acknowledgement is ever simulated.' })
   }
 
-  async listSerialPorts(): Promise<{ device: string; description: string }[]> {
-    const r = await this.safe(() => this.api<{ ports: { device: string; description: string }[] }>('/api/hardware/ports'))
-    return r?.ports ?? []
+  async phoneInventory(): Promise<PhoneInventory> {
+    const r = await this.safe(() => this.api<PhoneInventory>('/api/hardware/phone'))
+    return r ?? { adb: null, version: null, devices: [], error: 'Could not reach the backend to list phones.', hint: null }
   }
   async simulateFault(offline: boolean) {
     await this.safe(() => this.api('/api/hardware/simulate_fault', 'POST', { offline }))
   }
   async applySettings(s: AppSettings) {
     const r = await this.safe(() => this.api<AppSettings>('/api/settings', 'PUT', s))
-    if (r) set({ settings: r, zones: r.intent.zones, hardwareMode: r.hardware_mode, interactionMode: r.interaction_mode, hardwareInfo: r.arduino, notice: 'Settings saved.' })
+    if (r) set({ settings: r, zones: r.intent.zones, hardwareMode: r.hardware_mode, interactionMode: r.interaction_mode, hardwareInfo: r.phone, notice: 'Settings saved.' })
   }
   async refreshAnalytics() {
     const s = await this.safe(() => this.api<AnalyticsSummary>('/api/analytics/summary'))

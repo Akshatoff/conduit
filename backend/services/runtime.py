@@ -30,7 +30,7 @@ class ConduitRuntime:
         self.analytics = AnalyticsService(session_factory)
         self.controller = DeviceController(mode=settings.hardware_mode, emit=self._on_device_event,
                                            min_confidence=settings.intent.min_confidence)
-        self.controller.configure_hardware(settings.arduino.port, settings.arduino.baud, settings.arduino.timeout_s)
+        self.controller.configure_hardware(settings.phone.adb_path, settings.phone.serial, settings.phone.timeout_s)
         self.engine = IntentEngine(settings.intent, device_states=self.controller.device_states)
         self.baseline = BaselineController(device_states=self.controller.device_states)
         self.interaction_mode = settings.interaction_mode
@@ -61,13 +61,14 @@ class ConduitRuntime:
         self.stop_vision()
         if self._health_task:
             self._health_task.cancel()
+        await self.controller.shutdown()   # stops the phone buzzer and restores the screen
 
     async def _health_loop(self) -> None:
         while True:
             await asyncio.sleep(2.0)
             try:
-                if self.controller.mode == "hardware" and self.controller.hw.port:
-                    await self.controller.refresh()  # also acts as the heartbeat the firmware watches
+                if self.controller.mode == "hardware":
+                    await self.controller.refresh()  # phone heartbeat: re-probes the adb link
             except Exception as e:  # never let the heartbeat die
                 self.bus.publish("system_error", {"where": "health_loop", "message": str(e)})
 
@@ -330,7 +331,7 @@ class ConduitRuntime:
         self.workspace_mode = new.workspace_mode
         self.engine.set_config(new.intent)
         self.controller.min_confidence = new.intent.min_confidence
-        self.controller.configure_hardware(new.arduino.port, new.arduino.baud, new.arduino.timeout_s)
+        self.controller.configure_hardware(new.phone.adb_path, new.phone.serial, new.phone.timeout_s)
         if self.interaction_mode != new.interaction_mode:
             self.set_interaction_mode(new.interaction_mode)
         if old.hardware_mode != new.hardware_mode or self.controller.mode != new.hardware_mode:

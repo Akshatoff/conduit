@@ -83,12 +83,17 @@ class FaultRequest(BaseModel):
 
 
 # ------------------------------------------------------------------ settings
-class ArduinoSettings(BaseModel):
-    """USB serial link to the Arduino Uno node (e.g. COM3 / /dev/ttyACM0 at 9600 baud)."""
+class PhoneSettings(BaseModel):
+    """USB link to the Android phone node (adb + optional device serial).
 
-    port: str = ""
-    baud: int = Field(9600, ge=1200, le=115200)
-    timeout_s: float = Field(2.0, ge=0.2, le=10.0)
+    Leave ``adb_path`` blank to use ``adb`` from PATH (or the usual Android SDK locations).
+    Leave ``serial`` blank to use the first phone that adb reports as ready.
+    """
+
+    adb_path: str = Field("", max_length=400)
+    serial: str = Field("", max_length=120)
+    timeout_s: float = Field(8.0, ge=0.5, le=30.0)
+    pulse_ms: int = Field(700, ge=50, le=5000)
 
 
 class CameraSettings(BaseModel):
@@ -108,7 +113,7 @@ class AppSettings(BaseModel):
     workspace_mode: str = Field("hospital", max_length=40)   # active operational environment
     hardware_mode: Literal["simulation", "hardware"] = "simulation"
     interaction_mode: Literal["baseline", "conduit"] = "conduit"
-    arduino: ArduinoSettings = Field(default_factory=ArduinoSettings)
+    phone: PhoneSettings = Field(default_factory=PhoneSettings)
     camera: CameraSettings = Field(default_factory=CameraSettings)
     privacy: PrivacySettings = Field(default_factory=PrivacySettings)
     intent: IntentConfig = Field(default_factory=IntentConfig)

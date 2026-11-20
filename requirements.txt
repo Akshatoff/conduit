@@ -7,7 +7,6 @@ numpy>=1.26
 python-dotenv>=1.0
 opencv-python>=4.9
 mediapipe>=0.10.14
-pyserial>=3.5
 
 # --- testing (no camera or Arduino needed) ---
 pytest>=8.0

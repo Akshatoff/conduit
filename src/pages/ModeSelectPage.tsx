@@ -133,7 +133,7 @@ export function ModeSelectPage() {
             </ul>
           </div>
           <p className="rounded-lg border border-line/70 bg-bg/40 p-2.5 text-[10px] leading-snug text-muted">
-            Research prototype. Not a certified medical, cleanroom, industrial or food-safety product. Hardware is limited to one isolated LED and a model servo.
+            Research prototype. Not a certified medical, cleanroom, industrial or food-safety product. Hardware is limited to the phone's own outputs: torch, screen backlight and vibration motor.
           </p>
         </Card>
       </div>

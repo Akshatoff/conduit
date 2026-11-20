@@ -15,7 +15,7 @@ const C_COND = '#42d6c5'
 const tooltipStyle = { background: '#111c2e', border: '1px solid #233450', borderRadius: 8, fontSize: 12, color: '#eaf1fa' }
 
 const SCENARIOS = {
-  intended: ['Select lighting + pinch confirm', 'Select access + pinch confirm', 'Dwell, then cancel with a fist'],
+  intended: ['Select torch + pinch confirm', 'Select screen flash + pinch confirm', 'Dwell, then cancel with a fist'],
   unintended: ['Wave across the frame', 'Quick swipe through zones', 'Reach for an object past the controls', 'Scratch face / hand adjust', 'Hand rests in zone, no intent', 'Accidental pinch / fist'],
 }
 
@@ -33,14 +33,14 @@ function SessionControl() {
     ...Object.values(DEVICE_SPECS).map((d) => ({ id: d.id, label: `${d.name} · shared node` })),
     ...(activeMode?.controls.filter((c) => c.kind === 'digital').map((c) => ({ id: c.device, label: `${c.label} · digital (${activeMode.shortName})` })) ?? []),
   ]
-  const [target, setTarget] = useState(targetOptions[0]?.id ?? 'lighting')
+  const [target, setTarget] = useState(targetOptions[0]?.id ?? 'torch')
   const [scenario, setScenario] = useState('')
 
   useEffect(() => {
     setScenario(SCENARIOS[label][0])
   }, [label])
   useEffect(() => {
-    if (!targetOptions.some((o) => o.id === target)) setTarget(targetOptions[activeMode ? Object.values(DEVICE_SPECS).length : 0]?.id ?? 'lighting')
+    if (!targetOptions.some((o) => o.id === target)) setTarget(targetOptions[activeMode ? Object.values(DEVICE_SPECS).length : 0]?.id ?? 'torch')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active])
 

@@ -1,4 +1,4 @@
-import { Cpu, FlaskConical, Lightbulb, Lock, PlugZap, Server, Unplug, Wifi, WifiOff } from 'lucide-react'
+import { Cpu, Flashlight, FlaskConical, PlugZap, Server, Smartphone, Unplug, Vibrate, Wifi, WifiOff } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { EventLog } from '../components/EventLog'
 import { ModeTwinPanel } from '../components/mode/ModeTwinPanel'
@@ -10,32 +10,53 @@ import { useConduit } from '../store'
 import { cn } from '../utils/cn'
 import { ago } from '../utils/format'
 
-function BulbArt({ on, unknown }: { on: boolean; unknown: boolean }) {
+function DeviceArt({ type, on, unknown }: { type: string; on: boolean; unknown: boolean }) {
+  const stroke = unknown ? '#8796aa' : on ? '#f5b942' : '#3a4f72'
+  if (type === 'display') {
+    return (
+      <svg viewBox="0 0 120 120" className="size-28" aria-hidden>
+        <rect x="38" y="14" width="44" height="80" rx="8" fill="#0f1a2c" stroke={stroke} strokeWidth="2.5" strokeDasharray={unknown ? '4 4' : undefined} />
+        <rect x="43" y="20" width="34" height="66" rx="4" fill={on ? '#ffffff' : '#18263d'} opacity={on ? 0.95 : 1} />
+        <circle cx="60" cy="91" r="2.5" fill="#3a4f72" />
+        <text x="60" y="108" textAnchor="middle" fontSize="9" fill="#8796aa" fontFamily="ui-monospace,monospace">
+          {unknown ? 'brightness ?' : on ? 'backlight 255' : 'backlight auto'}
+        </text>
+      </svg>
+    )
+  }
+  if (type === 'haptic') {
+    return (
+      <svg viewBox="0 0 120 120" className="size-28" aria-hidden>
+        <rect x="40" y="18" width="40" height="72" rx="7" fill="#0f1a2c" stroke={stroke} strokeWidth="2.5" strokeDasharray={unknown ? '4 4' : undefined} />
+        {on && !unknown && (
+          <>
+            <path d="M24 34c-6 8-6 20 0 28" stroke="#42d6c5" strokeWidth="2" fill="none" opacity="0.9" />
+            <path d="M15 28c-9 11-9 29 0 40" stroke="#42d6c5" strokeWidth="1.6" fill="none" opacity="0.55" />
+            <path d="M96 34c6 8 6 20 0 28" stroke="#42d6c5" strokeWidth="2" fill="none" opacity="0.9" />
+            <path d="M105 28c9 11 9 29 0 40" stroke="#42d6c5" strokeWidth="1.6" fill="none" opacity="0.55" />
+          </>
+        )}
+        <text x="60" y="108" textAnchor="middle" fontSize="9" fill="#8796aa" fontFamily="ui-monospace,monospace">
+          {unknown ? 'motor ?' : on ? 'pulsing' : 'idle'}
+        </text>
+      </svg>
+    )
+  }
   return (
     <svg viewBox="0 0 120 120" className="size-28" aria-hidden>
       <defs>
-        <radialGradient id="glow" cx="50%" cy="45%" r="55%">
-          <stop offset="0%" stopColor="#ffe9a8" stopOpacity="0.95" />
+        <radialGradient id="torchglow" cx="50%" cy="60%" r="60%">
+          <stop offset="0%" stopColor="#ffe9a8" stopOpacity="0.85" />
           <stop offset="100%" stopColor="#f5b942" stopOpacity="0" />
         </radialGradient>
       </defs>
-      {on && <circle cx="60" cy="52" r="52" fill="url(#glow)" />}
-      <path d="M60 18c-17 0-29 12-29 28 0 11 6 18 12 25 3 4 5 8 5 13h24c0-5 2-9 5-13 6-7 12-14 12-25 0-16-12-28-29-28z" fill={on ? '#ffd877' : '#18263d'} stroke={unknown ? '#8796aa' : on ? '#f5b942' : '#3a4f72'} strokeWidth="2.5" strokeDasharray={unknown ? '4 4' : undefined} />
-      <rect x="48" y="86" width="24" height="7" rx="3" fill="#2a3d5c" />
-      <rect x="51" y="95" width="18" height="7" rx="3" fill="#2a3d5c" />
-    </svg>
-  )
-}
-
-function LatchArt({ locked, unknown }: { locked: boolean; unknown: boolean }) {
-  const col = unknown ? '#8796aa' : locked ? '#4da3ff' : '#f5b942'
-  return (
-    <svg viewBox="0 0 120 120" className="size-28" aria-hidden>
-      <rect x="14" y="30" width="30" height="60" rx="6" fill="#0f1a2c" stroke="#3a4f72" strokeWidth="2.5" />
-      <rect x="76" y="30" width="30" height="60" rx="6" fill="#0f1a2c" stroke="#3a4f72" strokeWidth="2.5" />
-      <rect x="40" y="52" width="46" height="16" rx="5" fill={col} style={{ transform: `translateX(${locked && !unknown ? 0 : -26}px)`, transition: 'transform 0.5s ease' }} opacity={unknown ? 0.4 : 1} />
-      <circle cx="29" cy="78" r="3" fill="#8796aa" />
-      <text x="60" y="108" textAnchor="middle" fontSize="9" fill="#8796aa" fontFamily="ui-monospace,monospace">SG90 · model latch</text>
+      {on && <circle cx="60" cy="74" r="52" fill="url(#torchglow)" />}
+      <rect x="24" y="46" width="72" height="22" rx="6" fill="#0f1a2c" stroke={stroke} strokeWidth="2.5" strokeDasharray={unknown ? '4 4' : undefined} />
+      <path d="M96 46 L112 40 V74 L96 68 Z" fill={on ? '#ffd877' : '#18263d'} stroke={stroke} strokeWidth="2" />
+      <rect x="36" y="52" width="10" height="10" rx="2" fill={on ? '#f5b942' : '#2a3d5c'} />
+      <text x="60" y="108" textAnchor="middle" fontSize="9" fill="#8796aa" fontFamily="ui-monospace,monospace">
+        {unknown ? 'torch ?' : on ? 'torch on' : 'torch off'}
+      </text>
     </svg>
   )
 }
@@ -75,9 +96,8 @@ function DeviceCard({ d, tick }: { d: DeviceTwin; tick: number }) {
   void tick
   const unknown = d.confirmed_state === 'UNKNOWN'
   const on = d.confirmed_state === 'ON'
-  const locked = d.confirmed_state === 'LOCKED'
   const conn = connTone(d.connection)
-  const Icon = d.type === 'led' ? Lightbulb : Lock
+  const Icon = d.type === 'display' ? Smartphone : d.type === 'haptic' ? Vibrate : Flashlight
   return (
     <Card
       title={d.name}
@@ -92,13 +112,13 @@ function DeviceCard({ d, tick }: { d: DeviceTwin; tick: number }) {
       }
     >
       <div className="flex items-center gap-4">
-        {d.type === 'led' && <BulbArt on={on} unknown={unknown} />}
-        {d.type === 'servo_latch' && <LatchArt locked={locked} unknown={unknown} />}
+        <DeviceArt type={d.type} on={on} unknown={unknown} />
         <div className="min-w-0">
-          <p className="text-[11px] uppercase tracking-wider text-muted">Confirmed state</p>
-          <p className={cn('text-2xl font-semibold tracking-tight', unknown ? 'text-muted' : on || d.confirmed_state === 'UNLOCKED' ? 'text-warn' : 'text-ink')}>{d.confirmed_state}</p>
+          <p className="text-[11px] uppercase tracking-wider text-muted">{d.verified || d.simulated ? 'Confirmed state' : 'Acknowledged state'}</p>
+          <p className={cn('text-2xl font-semibold tracking-tight', unknown ? 'text-muted' : on ? 'text-warn' : 'text-ink')}>{d.confirmed_state}</p>
           <p className="mt-1 text-[11px] text-muted">{d.hardware}</p>
-          <p className="text-[11px] text-muted">source: {d.state_source === 'device_readback' ? 'device read-back' : d.state_source}</p>
+          <p className="text-[11px] text-muted">source: {d.state_source === 'device_readback' ? 'device read-back' : d.state_source === 'node_ack' ? 'node ack (no read-back)' : d.state_source}</p>
+          {d.readback_note && <p className="mt-1 text-[10px] leading-snug text-muted/80">{d.readback_note}</p>}
         </div>
       </div>
 
@@ -156,13 +176,13 @@ export function TwinPage() {
               {simulated ? <Server className="size-5" /> : <Cpu className="size-5" />}
             </div>
             <div>
-              <p className="text-sm font-semibold text-ink">{simulated ? 'Simulation node' : `Arduino Uno ${info.port ? `· ${info.port} @ ${info.baud}` : '(serial port not set)'}`}</p>
+              <p className="text-sm font-semibold text-ink">{simulated ? 'Simulation node' : `Phone node ${info.model ? `· ${info.model}` : ''}${info.serial ? ` (${info.serial})` : ' (serial not set)'}`}</p>
               <p className="text-xs text-muted">
                 {simulated
                   ? 'All device states shown are SIMULATED. Commands use the same validation, acknowledgement and read-back path as real hardware.'
                   : anyDisc
-                    ? 'Node unreachable — states are UNKNOWN. No acknowledgement is ever simulated in hardware mode; firmware failsafe returns outputs to safe state.'
-                    : 'Physical states are read back from the device after each acknowledgement.'}
+                    ? 'Phone unreachable — states are UNKNOWN. No acknowledgement is ever simulated in hardware mode; the node stops every pulse and releases the torch.'
+                    : 'States come back from the phone: screen brightness is read back, torch and vibration are acknowledged only.'}
               </p>
             </div>
           </div>
@@ -209,11 +229,11 @@ export function TwinPage() {
         <EventLog title="Command & acknowledgement log" max="max-h-80" />
         <Card title="Safety notes">
           <ul className="space-y-2 text-xs leading-relaxed text-muted">
-            <li>• The twin changes <b className="text-ink">only</b> after an acknowledgement <i>and</i> an independent state read-back agree. Sending a command never updates it.</li>
-            <li>• Demonstration hardware is isolated low-voltage only: one LED on D3 and an SG90 servo on D9. There is no motor or fan.</li>
+            <li>• The twin changes <b className="text-ink">only</b> after an acknowledgement; it is marked <b className="text-ink">CONFIRMED</b> only when an independent state read-back agrees. Sending a command never updates it.</li>
+            <li>• Demonstration hardware is the phone itself: rear torch, screen backlight and vibration motor. Nothing else is actuated.</li>
             <li>• Never connect Conduit to mains power, real door locks, medical or industrial equipment.</li>
-            <li>• Arduino firmware returns both outputs to a safe state (LED off, servo 0° / LOCKED) when host contact is lost.</li>
-            {kind === 'browser' && <li>• Browser runtime cannot open the Arduino USB serial port: hardware mode needs the Python backend.</li>}
+            <li>• On loss of contact the node stops every vibration pulse and releases the torch; the screen returns to its saved brightness.</li>
+            {kind === 'browser' && <li>• A browser cannot run adb: hardware mode needs the Python backend on the same machine as the phone.</li>}
           </ul>
         </Card>
       </div>

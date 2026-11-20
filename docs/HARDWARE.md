@@ -1,163 +1,146 @@
-# Hardware — Arduino Uno node (USB serial)
+# Hardware — the phone node (USB · `adb`)
 
-Conduit has one physical build: an **Arduino Uno** connected to the machine running the Conduit
-backend by **USB serial**. There is **no motor, fan or other actuator** — two isolated low-voltage
-outputs only:
+Conduit's physical build is a **mobile phone**. The machine running the Conduit backend drives it over a
+**USB cable with `adb`** (Android Debug Bridge). There is no microcontroller, no shield, no soldering and
+no companion app — and no motor, fan or relay. Three outputs on the phone itself:
 
-| Device id | Function | Output | Meaning |
-|---|---|---|---|
-| `lighting` | Lighting | LED on **D3** | `ON` / `OFF` |
-| `access` | Access control | SG90 servo on **D9** | `LOCKED` = 0°, `UNLOCKED` = 90° |
+| Device id | Function | What the phone does | States | Readable back? |
+|---|---|---|---|---|
+| `torch` | Torch | rear camera LED (`cmd torch set on\|off`; falls back to a full-brightness screen flash when the phone does not expose the torch) | `ON` / `OFF` | **no** — the node reports `ACKNOWLEDGED`, never `CONFIRMED` |
+| `screen` | Screen flash | backlight to maximum + wake (`settings put system screen_brightness 255`) | `ON` / `OFF` | **yes** — brightness ≥ 240 is read back, so this output can reach `CONFIRMED` |
+| `vibration` | Vibration | repeating haptic pulse (`cmd vibrator vibrate <pulse_ms>`) | `ON` / `OFF` (pulses stop on OFF) | **no** — acknowledged only |
 
-Everything else in the app (devices, zones, analytics, validation) uses these two ids. There is no
-`ventilation` device: the earlier fan/motor has been removed from the firmware, backend, UI, tests
-and docs.
+Everything else (zones, twins, analytics, validation) uses these three ids. The old `lighting` /
+`access` devices, the Arduino sketch and the serial protocol are gone; there is no fallback to them.
 
-> **Safety.** Isolated low-voltage demonstration only. Never connect this to mains power, real door
-> locks, medical devices, machinery or anything safety-critical. Power the servo from its own 5 V
-> supply with a common ground. A fan/motor, if you ever add one, needs a transistor/MOSFET driver —
-> never an Arduino pin.
+> **Scope.** Only your own phone's torch, screen and vibration motor are actuated. Never point this at
+> medical devices, machinery, door locks or anything safety-critical, and never leave a vibration pulse
+> running unattended.
 
 ---
 
-## 1. Bill of materials
+## 1. What you need
 
 | Part | Role |
 |---|---|
-| Arduino Uno (or Uno-compatible) + USB cable | the node |
-| 1 × LED + 220 Ω resistor | `lighting` |
-| 1 × SG90 (or similar 5 V hobby servo) | `access` model latch |
-| Breadboard, jumper wires | wiring |
-| 5 V supply (≥ 500 mA) for the servo | avoids brown-outs/resets |
+| An Android phone (Android 8+ recommended — `cmd vibrator` / `cmd torch` exist there) | the node |
+| A USB **data** cable (not charge-only) | transport |
+| `adb` — standalone platform-tools, or Android Studio's SDK, or `winget install Google.PlatformTools` | the driver |
+| Windows 10/11, macOS or Linux running Conduit | host |
 
-## 2. Wiring
+No root, no unlocked bootloader, no app installation, no USB OTG adapter.
 
-| Function | Uno pin | Circuit |
+## 2. Enable USB debugging (once per phone)
+
+1. **Settings → About phone → Build number** — tap 7 times to unlock *Developer options*.
+2. **Settings → System → Developer options → USB debugging** — on.
+3. Plug the phone into the PC. On the phone, accept **Allow USB debugging?** (tick *Always allow from
+   this computer*).
+4. If the prompt never appears: Developer options → **Revoke USB debugging authorisations**, replug,
+   and if needed switch **USB configuration** from *Charging only* to *File transfer (MTP)*.
+
+Check it from a terminal:
+
+```powershell
+adb devices -l
+# List of devices attached
+# R58M12345AB  device product:... model:SM_G991B ...
+```
+
+`device` means ready. Other states:
+
+| `adb devices` shows | Meaning | Fix |
 |---|---|---|
-| LED | **D3** | D3 → 220 Ω → LED anode; LED cathode → GND |
-| Servo signal | **D9** | servo signal → D9 |
-| Servo power | — | servo V+ → external 5 V; servo GND → **common ground with the Uno** |
+| `unauthorized` | the prompt was not accepted | unlock the phone, accept *Allow USB debugging*, re-run |
+| `offline` | the daemon lost sync | `adb kill-server`, replug, `adb devices -l` |
+| nothing at all | no data connection | try another cable/port; on Windows install the OEM USB driver |
 
-Do not power the servo from the Uno's 5 V pin if the board resets when it moves. The servo draws
-current spikes; the external rail plus a shared ground fixes it.
+## 3. Point Conduit at the phone
 
-## 3. Flash the firmware
+* **Settings → Simulation & phone node** → *adb path* (blank = `adb` on `PATH`, then the usual
+  platform-tools folders), *Phone serial* (blank = the first phone adb reports as ready),
+  *Command timeout* and *Vibration pulse*.
+* **Find phones** scans `adb devices` and lists serial, model and state; the same inventory is shown on
+  the **Hardware** page.
+* **Test link** runs the adb handshake (`adb version`, device list, `getprop` for model/manufacturer and
+  Android version) and reports what it found.
 
-Sketch: [`firmware/conduit_uno/conduit_uno.ino`](../firmware/conduit_uno/conduit_uno.ino)
+Equivalent environment variables (used when the settings are blank):
+`CONDUIT_ADB` (path to the adb executable) and `CONDUIT_PHONE_SERIAL`.
 
-1. Arduino IDE → *Tools → Board → **Arduino Uno*** and the correct port.
-2. No external libraries beyond the bundled **Servo** library.
-3. Upload.
-4. The board prints `READY conduit-uno-1.0` at **9600 baud**.
-5. **Close the Arduino Serial Monitor** before starting Conduit — a serial port can only be open in
-   one program at a time.
+API: `GET /api/hardware/phone` → `{adb, devices, error, hint}`; `POST /api/hardware/connect` retries the
+handshake; `GET|PUT /api/settings` carries `phone: {adb_path, serial, timeout_s, pulse_ms}`.
 
-### Manual bench test (Serial Monitor, 9600 baud)
-
-```
-PING           -> PONG conduit-uno-1.0 <uptime_ms>
-STATE?         -> STATE lighting=OFF access=LOCKED servo=0
-LED_ON         -> ACK: LED ON
-LED_OFF        -> ACK: LED OFF
-SERVO          -> ACK: SERVO 90          (toggles 0 <-> 90)
-SERVO 0        -> ACK: SERVO 0 (LOCKED)
-```
-
-These short commands are for the Serial Monitor only. Conduit itself uses the structured protocol
-below, which carries a command id so a repeated message is never actuated twice.
-
-## 4. Serial protocol (9600 baud, one line per command)
-
-Host → node:
+## 4. How a command is executed
 
 ```
-PING
-INFO
-STATE?
-CMD <command_id> <device> <action> <source>
+UI / Intent Engine ─▶ controller.validate_command ─▶ SENT ─▶ adb command ─▶ node ACK
+                                                                 │
+                                        readable output?  ── yes ─▶ read back ─▶ CONFIRMED (verified)
+                                                          └─ no  ─▶ ACKNOWLEDGED (verified: false)
 ```
 
-Node → host:
+* **Never fabricated.** If `adb` errors, times out or the phone disappears, the command ends
+  `FAILED` / `DISCONNECTED`, the twin shows `UNKNOWN` and *no* acknowledgement is invented.
+* **Independent read-back** after the ack for `screen` only (brightness). The torch is probed with
+  `cmd torch`, `cmd flashlight` and a sysfs check; whether it is usable is reported as a capability. If it
+  is not, the torch command drives a full-brightness screen flash instead and the detail string says so.
+* **Idempotency + timeouts** live in the controller, identical in simulation and on the phone.
+* **Safe state on loss.** `shutdown()` / disconnect / OFF stops every pending vibration pulse, releases the
+  torch and restores the brightness value saved before the flash (128 if it was never readable).
+* **Baseline gesture commands never reach the phone** — they run on the simulated node only.
+* **Manual test** buttons exist only on the Hardware bench and the Twin device cards; each press writes one
+  `manual_test` command and is logged as such.
 
-```
-READY conduit-uno-1.0
-PONG conduit-uno-1.0 <uptime_ms>
-INFO lighting,access
-STATE lighting=ON access=LOCKED servo=0
-ACK <command_id> <device> ACKNOWLEDGED|REJECTED <state> [detail]
-ERR <detail>
-```
+### What the node actually runs
 
-* Devices: `lighting` (`ON`/`OFF`), `access` (`LOCK`/`UNLOCK`).
-* Sources that may drive outputs: `conduit_intent_engine`, `manual_test`. A `baseline_gesture`
-  command is refused by the firmware as defence in depth.
-* The controller verifies that the echoed `command_id` matches the command it sent.
-* After the acknowledgement the controller sends `STATE?` and only marks the twin `CONFIRMED` when
-  the read-back agrees with the requested state.
-
-### Safety behaviour in the firmware
-
-* **Idempotent:** the last 8 command ids are remembered; a repeated id replays the stored answer and
-  never actuates again.
-* **Failsafe:** if the host is silent for **5 s** (heartbeat every ~2 s) the LED switches off and the
-  servo returns to 0° (`LOCKED`).
-* **No autonomous blink**: the LED only reflects a command or the failsafe.
-* **Validation:** unknown device, invalid action or a forbidden source is answered `REJECTED` and the
-  outputs are left untouched.
-
-## 5. Configure Conduit
-
-1. Start the backend (`scripts\run.bat` on Windows) — the browser alone cannot open a serial port.
-2. *System Settings → Simulation & Arduino Uno*:
-   * **Serial port**: `COM3` (Windows), `/dev/ttyACM0` (Linux) or `/dev/cu.usbmodem…` (macOS).
-     Use *Find ports* to list what the backend can see.
-   * **Baud**: `9600` (must match the sketch).
-   * **Timeout**: 2 s is fine; servo moves add ~350 ms.
-3. Save → switch **Simulation mode** off → *Test connection*.
-4. Open **Hardware** in the navigation: LED and servo bench, or **Digital Twin** for the full
-   ACK + read-back lifecycle.
-
-Environment overrides: `CONDUIT_SERIAL_PORT`, `CONDUIT_SERIAL_BAUD` (see `.env.example`).
-
-## 6. The Hardware page (bench)
-
-`Hardware` in the top navigation is the one place to exercise each physical output individually:
-
-* **LED · D3** — *LED ON* / *LED OFF*.
-* **Servo · D9** — *Rotate to 90°* (`UNLOCK`) / *Rotate to 0°* (`LOCK`), with an arm graphic showing
-  the confirmed angle.
-* Each press is a `manual_test` command through the normal controller: validate → `SENT` → `ACK` →
-  `STATE?` read-back → `CONFIRMED`. The card shows the last ACK, the command id and any error.
-* Simulation/hardware toggle and *Test link* live on the same page.
-* Mode screens never use this page — they go through the Intent Engine only.
-
-## 7. What each environment calls the outputs
-
-| Environment | LED (`lighting`) | Servo (`access`) |
-|---|---|---|
-| Hospital | room-status indicator | supply-cabinet latch |
-| Semiconductor | equipment status indicator | model access mechanism |
-| Industrial | line-status lamp | demo access barrier |
-| Food processing | station-status lamp | sample-hatch latch |
-| Accessibility | adaptive indicator | adaptive latch |
-
-Nothing here is a real interlock, indicator of clinical state or safety device.
-
-## 8. Troubleshooting
-
-| Symptom | Fix |
+| Purpose | Command |
 |---|---|
-| `Cannot open serial port 'COM3'` | port in use (Serial Monitor, another app) or wrong name; replug the board |
-| `No reply to PING` | sketch not running / wrong baud; close the Serial Monitor and re-flash |
-| Twin stuck `DISCONNECTED` / `UNKNOWN` | cable, port, baud; then *Test link*. No acknowledgement is ever invented |
-| UNO resets when the servo moves | power the servo from a separate 5 V supply, common ground |
-| Servo jitters but does not hold | insufficient supply current; add a capacitor across the servo supply |
-| LED never lights | polarity, 220 Ω resistor, correct pin D3 |
-| Browser runtime shows hardware as unavailable | start the Python backend; browsers cannot open a serial port |
-| Every command is `REJECTED` | device/action mismatch — check the `detail` field in the log |
+| handshake | `adb version`, `adb devices -l`, `getprop ro.product.model` / `ro.product.manufacturer` / `ro.build.version.release` |
+| capability probe | `cmd torch set off`, `cmd flashlight set off`, `cmd vibrator` |
+| torch | `cmd torch set on` / `cmd torch set off` |
+| screen | `settings put system screen_brightness_mode 0`, `settings put system screen_brightness 255`, `input keyevent 224`, `wm dismiss-keyguard`; restore the saved value on OFF |
+| screen read-back | `settings get system screen_brightness` |
+| vibration | `cmd vibrator vibrate 700`, repeated every ~0.9 s (capped at 45 s); `cmd vibrator cancel` on OFF |
 
-## 9. Automated tests without hardware
+## 5. Manual bench test
 
-`python -m pytest -q` exercises the full controller against a fake serial transport that speaks the
-real line protocol (acknowledgement, wrong command id, silence, rejection, state mismatch). No board
-is required, and a missing port can only ever produce `DISCONNECTED` — never a fabricated ACK.
+From a terminal (phone unlocked once so the prompt is accepted):
+
+```powershell
+adb shell cmd torch set on
+adb shell cmd torch set off
+
+adb shell settings put system screen_brightness_mode 0
+adb shell settings put system screen_brightness 255
+adb shell settings get system screen_brightness      # 255
+adb shell settings put system screen_brightness 128  # restore something sane
+
+adb shell cmd vibrator vibrate 700
+adb shell cmd vibrator cancel
+```
+
+Then in the app: **Hardware → Torch on / Flash on / Buzz**. The bench shows, per output, the ack, whether
+it was verified, and the command id; the twin shows *ack only* where no read-back exists.
+
+## 6. Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `adb: command not found` / backend reports *adb not found* | platform-tools not installed or not on `PATH` | set the full path in Settings, or add platform-tools to `PATH` |
+| `unauthorized` | debugging prompt not accepted | unlock the phone, accept, re-run *Find phones* |
+| *No phone detected* but the phone charges | charge-only cable or port | use a data cable, another USB port, avoid hubs |
+| torch never turns on, detail mentions *screen fallback* | phone does not expose `cmd torch` without root | expected: the node uses the screen flash instead and says so |
+| `cmd vibrator` *Unknown command* | older Android | the pulse command is probed; vibration stays unavailable and is reported, never faked |
+| Brightness does not change | another app owns the brightness / auto-brightness | the node sets `screen_brightness_mode 0` first; close the other app |
+| Two adb servers fight (`adb devices` empty while the phone is connected) | another SDK/emulator version started its own daemon | `adb kill-server`, use one adb, restart Conduit |
+| Hardware mode shows *Disconnected* forever | adb handshake failed | read the hint on the Hardware page — it names the failing step |
+
+## 7. Limits worth saying out loud
+
+* Without root, the **torch cannot be read back**, and on many phones it cannot be switched at all; that is
+  why the torch output is acknowledged, with a screen-flash fallback.
+* The **vibration motor** gives no state over `adb`: the node reports the pulses it sent, nothing more.
+* Only the **screen brightness** is genuinely verifiable, so `CONFIRMED` is reserved for it.
+* The phone must stay connected: adb over Wi-Fi (`adb connect`) is not part of this build.
+* Everything runs on the PC; the phone receives no code, no app and no network traffic from Conduit.

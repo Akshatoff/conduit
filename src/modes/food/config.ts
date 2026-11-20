@@ -10,7 +10,7 @@ const controls: ModeControl[] = [
   { id: 'food.qc', device: 'food.qc', label: 'QC checklist', short: 'QC CHECK', kind: 'digital', action: 'NEXT_QC', hint: 'Mark the next quality-control item complete.' },
   { id: 'food.order', device: 'food.order', label: 'Order status', short: 'ORDER', kind: 'digital', action: 'ADVANCE_ORDER', hint: 'Advance a simulated order status.' },
   { id: 'food.assist', device: 'food.assist', label: 'Request assistance', short: 'ASSIST', kind: 'digital', action: 'REQUEST_ASSIST', hint: 'Send a simulated assistance request.' },
-  { id: 'food.lamp', device: 'lighting', label: 'Pass lamp', short: 'PASS LAMP', kind: 'physical', hint: 'Shared low-voltage LED used as a simulated pass indicator.' },
+  { id: 'food.torch', device: 'torch', label: 'Pass torch', short: 'PASS TORCH', kind: 'physical', hint: 'Phone torch used as a simulated pass indicator, driven over ADB.' },
 ]
 
 export const FOOD_MODE: ModeDefinition = {
@@ -31,14 +31,14 @@ export const FOOD_MODE: ModeDefinition = {
     'Quality-control checklist',
     'Simulated order status',
     'Simulated assistance request',
-    'Shared lamp output as a demonstration pass indicator',
+    'Phone torch as a demonstration pass indicator',
     'Mode-specific interaction history',
   ],
   safety: [
     'Fictional recipes and orders; no nutrition or allergen data is represented.',
     'No claim is made about food safety, contamination prevention or hygiene benefit.',
     'No connection to kitchen equipment, refrigeration or order systems.',
-    'Only the shared low-voltage LED is actuated in this mode.',
+    'Only the phone torch is actuated in this mode; no kitchen equipment is touched.',
   ],
   accent: '#ef8f6b',
   controls,
@@ -76,7 +76,7 @@ export const FOOD_MODE: ModeDefinition = {
     { id: 'food.recipe', name: 'Recipe display', type: 'digital', source: 'digital', description: 'Selected fictional recipe and preparation step. Digital UI state.' },
     { id: 'food.timer', name: 'Cooking timer', type: 'digital', source: 'digital', description: 'Demonstration timer; not connected to cooking equipment.' },
     { id: 'food.order', name: 'Order board', type: 'digital', source: 'digital', description: 'Simulated order statuses; no order system is connected.' },
-    { id: 'food.lamp', name: 'Pass lamp', type: 'actuator', source: 'physical', device: 'lighting', description: 'Low-voltage LED used as a simulated pass indicator, confirmed after read-back.' },
+    { id: 'food.torch', name: 'Pass torch', type: 'actuator', source: 'physical', device: 'torch', description: 'Phone torch; ADB gives no read-back, so the state is acknowledged only.' },
   ],
   analytics: ['Recipes opened', 'Preparation steps advanced', 'Timers started', 'QC checks completed', 'Accidental sweeps rejected'],
   panels: ['recipe', 'quantities', 'orders'],

@@ -1,16 +1,16 @@
 # Conduit — Gesture & Capability Tutorial
 
 This is the practical, everything-in-one-place guide to what Conduit can do with gestures.
-For installation, hardware wiring and the architecture, see [`README.md`](README.md),
+For installation, phone-node setup (USB + `adb`) and the architecture, see [`README.md`](README.md),
 [`docs/MODES.md`](docs/MODES.md) and [`docs/HARDWARE.md`](docs/HARDWARE.md).
 
 > **Current gesture model:** Conduit uses **poses** — pinch, open palm, fist and point. Distance between
 > two hands is not a control. This replaced the older two-hand spread/zoom interaction.
 
-> **Prototype only.** Conduit drives isolated low-voltage demo electronics on an **Arduino Uno over USB
-> serial**: one LED (D3) and one SG90 servo latch (D9). There is no motor or fan. It is not a medical,
-> industrial or safety-certified system. Digital panels are clearly labelled as simulated; physical
-> states are only shown as confirmed after an ACK **and** a read-back.
+> **Prototype only.** Conduit's hardware node is a **mobile phone driven over USB with `adb`**: the rear
+> torch, the screen backlight and the vibration motor. There is no motor, fan or relay. It is not a medical,
+> industrial or safety-certified system. Digital panels are clearly labelled as simulated; physical states
+> are only shown after a real node ACK, and only marked confirmed when the phone can read them back.
 
 
 ## Contents
@@ -53,8 +53,8 @@ different environment changes zones, controls and demo data — not the engine.
 5. Move steadily into one of the control zones on the left or right rail and hold still.
 6. When the target shows as selected/ready, **pinch thumb and index** to confirm.
 7. Open **Signature screen** from the toolbar to practise the view gestures (zoom, pan, rotate, swipe, finger-count pages).
-8. Open **Hardware** to exercise the two physical outputs individually, or **Digital Twin** to watch the
-   full ACK → read-back lifecycle. `docs/HARDWARE.md` covers wiring, flashing and the serial protocol.
+8. Open **Hardware** to exercise the three phone outputs individually, or **Digital Twin** to watch the
+   full ACK → read-back lifecycle. `docs/HARDWARE.md` covers USB debugging, `adb` and what can be verified.
 
 **Pointer simulator:** on **Live Interaction**, switch the input source to **Pointer simulator**. Move
 the mouse over the stage to move a synthetic 21-point hand; hold the mouse button to pinch. Use the
@@ -178,7 +178,7 @@ Zoom is limited to **1–5×** on the camera signature views (**3.6×** on the h
 
 - **Digital controls:** Patient overview, Clinical records, Imaging viewer, Task checklist, Procedure
   step, Workstation timer, Request assistance.
-- **Physical:** Workstation/shared LED.
+- **Physical:** Call torch (phone torch).
 - **Signature:** local X-ray viewer (`public/assets/xray/first.jpg`, `second.jpg`, `third.jpg`) — hold up **1 / 2 / 3 fingers** to jump to the matching image, point-drag pans, pinch zooms
   in, still open hand zooms out. The image is explicitly fictional and not diagnostic.
 - No real patient record, medical device or hospital system is connected.
@@ -187,7 +187,7 @@ Zoom is limited to **1–5×** on the camera signature views (**3.6×** on the h
 
 - **Digital controls:** Process stage, Wafer inspection, Defect category, Confirm inspection,
   Manufacturing checklist.
-- **Physical:** Equipment LED, Model access latch (servo).
+- **Physical:** Equipment torch, Access flash (screen backlight).
 - **Signature:** CAM 1 + CAM 2; pinch zooms CAM 2 in, still open hand zooms out, point-drag pans.
   Defect labels and the wafer map sharpen with zoom.
 
@@ -195,7 +195,7 @@ Zoom is limited to **1–5×** on the camera signature views (**3.6×** on the h
 
 - **Digital controls:** Maintenance manual, Next repair step, Mark step complete, Report fault,
   Maintenance timer, Request assistance.
-- **Physical:** Equipment indicator LED, Service access latch (servo).
+- **Physical:** Equipment torch, Service access buzz (vibration).
 - **Signature:** CAM 1 + CAM 2; **fist rotation** turns CAM 2, pinch zooms in, still open hand zooms out,
   point-drag pans, horizontal open-palm swipe pages repair steps.
 - Holding a tool while using the other hand is the intended demonstration.
@@ -204,7 +204,7 @@ Zoom is limited to **1–5×** on the camera signature views (**3.6×** on the h
 
 - **Digital controls:** Recipe selector, Preparation step, Ingredient quantities, Cooking timer,
   QC checklist, Order status, Request assistance.
-- **Physical:** Pass lamp (shared LED).
+- **Physical:** Pass torch.
 - **Signature timer gestures:**
   - Move an **open palm in a circle** around the timer dial to set duration (clockwise adds,
     anticlockwise reduces).
@@ -215,7 +215,7 @@ Zoom is limited to **1–5×** on the camera signature views (**3.6×** on the h
 ### Accessibility / adaptive interaction
 
 - **Digital controls:** Next panel, Select panel, Read panel, Back.
-- **Physical:** optional Desk lamp.
+- **Physical:** optional Desk torch.
 - **Signature:** pinch magnifies CAM 2, a still open hand reduces it, point-drag pans, plus large −/+
   buttons and a reset button.
 - **Live configuration** on the dashboard:
@@ -253,9 +253,9 @@ is always movement into a zone and cannot be replaced by a pose.
 
 ### Device mappings
 
-Each zone has a label and a target device: **Lighting** (LED) or **Access control** (servo latch). Mode
-geometry controls where the rails sit; a physical zone and a digital mode control both pass through the
-same selection and confirmation pipeline.
+Each zone has a label and a target device: **Torch**, **Screen flash** or **Vibration**. Mode geometry
+controls where the rails sit; a physical zone and a digital mode control both pass through the same
+selection and confirmation pipeline.
 
 ### Camera
 
@@ -272,14 +272,15 @@ same selection and confirmation pipeline.
 - Processing is local. Only structured events (state, confidence, reason) are logged — not images.
 - A **CAMERA ACTIVE** indicator is shown while the camera is on.
 
-### Simulation & Arduino Uno
+### Simulation & phone node
 
 - **Simulation mode** is always available and goes through the same validation, ACK and read-back path.
-- **Real hardware** is an Arduino Uno on a USB **serial port** (`COM3`, `/dev/ttyACM0`, …) at **9600**
-  baud with a timeout. *Find ports* lists what the backend can see.
-- The sketch must be flashed and the Arduino Serial Monitor closed; a port can only be open in one
-  program. The browser runtime cannot open a serial port, so real hardware needs the Python backend.
-- Only isolated low-voltage demo electronics are supported: LED on D3 and a servo on D9.
+- **Real hardware** is a phone on a USB cable driven with `adb`. Settings hold the *adb path*, the phone
+  *serial* (blank = first ready device), a command *timeout* and the *vibration pulse* length.
+  **Find phones** lists what `adb devices` reports.
+- USB debugging must be enabled and the *Allow USB debugging* prompt accepted. A browser cannot run
+  `adb`, so real hardware needs the Python backend on the same machine as the phone.
+- Only the phone's own outputs are used: rear torch, screen backlight and vibration motor.
 
 ### Connection
 
@@ -294,16 +295,20 @@ same selection and confirmation pipeline.
 
 - **Digital** controls are mode-layer panels (records, recipes, wafer maps, checklists, timers). They
   pass the same Intent Engine pipeline and are labelled digital/simulated.
-- **Physical** controls are exactly two low-voltage outputs on the Arduino Uno:
-  - **Lighting** — LED on **D3** (ON/OFF)
-  - **Access control** — SG90 servo on **D9**, 0° locked / 90° unlocked (LOCK/UNLOCK)
-- There is no motor or fan; the earlier ventilation output has been removed everywhere.
-- Physical state is shown as confirmed only after the node **ACK** and an independent **read-back**.
+- **Physical** controls are exactly three outputs on the phone:
+  - **Torch** — rear camera LED (`ON`/`OFF`, screen-flash fallback when the phone hides it)
+  - **Screen flash** — backlight at maximum (`ON`/`OFF`, brightness restored afterwards)
+  - **Vibration** — repeating haptic pulse (`ON`/`OFF`)
+- Nothing else is actuated; there is no motor, fan or relay.
+- Physical state changes only after a real node **ACK**. It is marked **CONFIRMED** only when an
+  independent **read-back** agrees — in practice only the screen brightness. Torch and vibration are
+  labelled *ack only*, with `verified: false`.
 - If the link fails, the twin shows **DISCONNECTED/UNKNOWN** — never a fake success.
-- **Hardware** in the navigation is the bench: one card per output with *LED ON / LED OFF* and
-  *Rotate to 90° / Rotate to 0°*, plus the last ACK, command id and error. Every press is a
-  `manual_test` command through the normal validate → ACK → read-back path. The Digital Twin device
-  cards also keep their manual buttons. Mode control surfaces have no manual/rehearsal shortcut.
+- **Hardware** in the navigation is the bench: one card per output with *Torch on / Torch off*,
+  *Flash on / Restore* and *Buzz / Silence*, plus the last ACK, whether it was verified, the command id
+  and any error. Every press is a `manual_test` command through the normal validate → ACK → read-back
+  path. The Digital Twin device cards also keep their manual buttons. Mode control surfaces have no
+  manual/rehearsal shortcut.
 
 ---
 
@@ -340,7 +345,7 @@ same selection and confirmation pipeline.
 | Signature gestures pause | They pause during an in-flight Intent Engine selection/confirmation/execution. The signature overlay's local runtime also pauses the engine while open. |
 | CAM 2 shows "same camera" | Only one browser video device is exposed. Connect/close apps using the second camera, then refresh in Settings. |
 | Gesture flips around | Improve lighting/background, keep one hand in frame, reduce landmark smoothing lag, and use the pose hold rather than quick flashes. |
-| Servo/LED do nothing | Hardware page → check the serial port and 9600 baud, close the Arduino Serial Monitor, press *Test link*. `UNKNOWN` means the board is not answering — never a fake success. |
+| Torch/vibration do nothing | Hardware page → check `adb devices` shows `device`, press *Find phones* and *Test link*. `unauthorized` means the debugging prompt was not accepted; *ack only* states are expected where the phone has no readable value. `UNKNOWN` means the phone is not answering — never a fake success. |
 | Hospital X-ray panel asks for an image | Add `first.jpg`, `second.jpg` and `third.jpg` to `public/assets/xray/`, then reload. Swipe or use the ‹ › buttons to move between them. |
 
 ---
@@ -383,9 +388,10 @@ ACCESSIBILITY
 ## 11. Scope and safety
 
 - Conduit is a prototype, not a certified medical, cleanroom, kitchen or industrial controller.
-- It drives only isolated low-voltage demo electronics. Never connect mains, real locks, medical
-  equipment, machinery, PLCs or safety interlocks.
+- It drives only your own phone's torch, screen and vibration motor. Never point it at mains, real locks,
+  medical equipment, machinery, PLCs or safety interlocks.
 - No environment connects to a real hospital, MES/fab, CMMS, kitchen or building system.
-- Fictional demo data is labelled; physical success is only claimed after ACK + read-back.
+- Fictional demo data is labelled; physical success is only claimed after ACK + read-back, and the
+  outputs that cannot be read back are explicitly marked as acknowledged only.
 - Gesture recognition is rule-based, not a trained ML model; unusual hand shapes or poor lighting may
   classify as `other`. Use supported poses and steady lighting for reliable operation.
