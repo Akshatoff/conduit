@@ -20,3 +20,9 @@ if errorlevel 1 exit /b 1
 node .modes.cjs
 if errorlevel 1 exit /b 1
 del .modes.cjs
+echo === TypeScript: MediaPipe model validation ===
+call npx esbuild tests_ts/model-asset.ts --bundle --platform=node --outfile=.model.cjs --log-level=error
+if errorlevel 1 exit /b 1
+node .model.cjs
+if errorlevel 1 exit /b 1
+del .model.cjs

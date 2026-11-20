@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test:parity": "esbuild tests_ts/parity.ts --bundle --platform=node --outfile=.parity.cjs --log-level=error && node .parity.cjs",
-    "test:modes": "esbuild tests_ts/modes.ts --bundle --platform=node --outfile=.modes.cjs --log-level=error && node .modes.cjs"
+    "test:modes": "esbuild tests_ts/modes.ts --bundle --platform=node --outfile=.modes.cjs --log-level=error && node .modes.cjs",
+    "test:model": "esbuild tests_ts/model-asset.ts --bundle --platform=node --outfile=.model.cjs --log-level=error && node .model.cjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.2.3",

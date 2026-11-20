@@ -339,6 +339,26 @@ async function main() {
   await closeSignature()
   check('signature screen closes without disturbing the workspace', !/Signature screen/.test(document.querySelector('button[aria-pressed="true"]')?.textContent ?? '') && !!document.querySelector('[data-camera-fill="true"]'))
   check('closing signature resets the live camera transform', S().signatureView.active === false && S().signatureView.zoom === 1 && !document.querySelector('[data-signature-live]'), JSON.stringify(S().signatureView))
+
+  // A corrupt/missing model must not be reported as a camera problem (that was the confusing
+  // "Camera could not start" + "Unable to open zip archive" pair).
+  await act(async () => {
+    useConduit.setState({ camera: { ...S().camera, state: 'error', active: false, error: 'Hand model could not be loaded: no usable hand_landmarker.task. /mediapipe/hand_landmarker.task returned a web page' } })
+    await sleep(80)
+  })
+  check('a model failure is titled as hand tracking', /Hand tracking could not start/.test(text()) && !/Camera could not start/.test(text()), text().slice(0, 260))
+  check('the model failure keeps its full explanation', /returned a web page/.test(text()), text().slice(0, 300))
+  await act(async () => {
+    useConduit.setState({ camera: { ...S().camera, state: 'error', active: false, error: 'Camera unavailable: Permission denied' } })
+    await sleep(80)
+  })
+  check('a device failure still reads as a camera problem', /Camera could not start/.test(text()) && !/Hand tracking could not start/.test(text()))
+  await act(async () => {
+    useConduit.setState({ camera: { ...S().camera, state: 'running', active: true, error: null } })
+    await sleep(80)
+  })
+  check('the live camera view recovers after the error is cleared', !/could not start/.test(text()))
+
   console.log(failed ? `\n${failed} UI smoke check(s) FAILED` : '\nAll UI smoke checks passed')
   process.exit(failed ? 1 : 0)
 }

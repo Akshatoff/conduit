@@ -143,8 +143,10 @@ python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
 ```
 
 Development with hot reload: `scripts\dev.bat` (backend :8000 + Vite :5173).
-First camera start downloads the ~8 MB MediaPipe `hand_landmarker.task` once (to `backend/vision/assets/`);
-afterwards everything is offline. For an air-gapped machine put the file there manually.
+The ~7.8 MB MediaPipe `hand_landmarker.task` model **ships with the repo** at `public/mediapipe/`, so the
+first camera start needs no download; the Python backend and the browser runtime both read that file.
+`scripts\fetch_model.bat --check` verifies it (and copies the MediaPipe WASM runtime out of
+`node_modules`, which keeps the browser runtime offline too).
 
 macOS/Linux: same commands with `source .venv/bin/activate`.
 
@@ -152,10 +154,12 @@ macOS/Linux: same commands with `source .venv/bin/activate`.
 
 Open `dist/index.html` (after `npm run build`) or `npm run dev`. If no backend answers, the UI automatically switches
 to the **browser runtime**: MediaPipe runs in WebAssembly in the tab, and the *same* Intent Engine, device simulation
-and analytics run locally (settings/trials kept in `localStorage`). If the camera or the model CDN is unavailable, use
-the **Pointer simulator**: the mouse drives a *synthetic* 21-point hand (hold the button to pinch) through the
-identical landmark → trajectory → intent pipeline. It is clearly labelled and exists so a demo never depends on a
-camera, a server or Wi-Fi.
+and analytics run locally (settings/trials kept in `localStorage`). The hand model is read from
+`/mediapipe/hand_landmarker.task` and the WASM runtime from `/mediapipe/wasm/` (both local after
+`scripts\fetch_model.bat`; a CDN is only a fallback). If the camera is unavailable, use the **Pointer simulator**:
+the mouse drives a *synthetic* 21-point hand (hold the button to pinch) through the identical
+landmark → trajectory → intent pipeline. It is clearly labelled and exists so a demo never depends on a camera, a
+server or Wi-Fi.
 
 ---
 
@@ -281,9 +285,10 @@ scripts\test.bat
 
 | Suite | Command | Covers |
 |---|---|---|
-| Python (117 tests) | `python -m pytest -q` | landmark features & gestures (rotation/scale invariance), second-hand landmarks exposed for signature views, trajectory maths, **intent state transitions**, confidence threshold, accidental-movement rejection, confirmation/cancel/timeouts, cooldown & duplicate prevention, command validation, simulation acks, **Arduino serial protocol (ack, wrong id, silence, rejection, state mismatch)**, analytics definitions, SQLite, REST + WebSocket, full pipeline (synthetic landmarks → engine → controller → twin → DB → analytics), **mode zones with explicit actions, digital execution never touching the twin, workspace analytics, API workspace round-trip** |
+| Python (126 tests) | `python -m pytest -q` | landmark features & gestures (rotation/scale invariance), second-hand landmarks exposed for signature views, trajectory maths, **intent state transitions**, confidence threshold, accidental-movement rejection, confirmation/cancel/timeouts, cooldown & duplicate prevention, command validation, simulation acks, **Arduino serial protocol (ack, wrong id, silence, rejection, state mismatch)**, analytics definitions, SQLite, REST + WebSocket, full pipeline (synthetic landmarks → engine → controller → twin → DB → analytics), **mode zones with explicit actions, digital execution never touching the twin, workspace analytics, API workspace round-trip**, **hand-model file validation (HTML/truncated downloads rejected, corrupt file repaired)** |
 | TS parity | `npm run test:parity` | TypeScript engine makes the same decisions as the Python engine |
 | TS modes | `npm run test:modes` | five environments, registry/workflow/zone integrity, one shared engine authorises each mode, accidental sweep rejected, mode history/reset |
+| TS model assets | `npm run test:model` | `.task` bundle validation (prefix tolerance, HTML/LFS/truncated rejection), candidate ordering, actionable errors, local-first WASM runtime probing |
 | UI smoke (optional) | `npm i --no-save jsdom ws`, bundle `tests_ts/ui-smoke.tsx` / `backend-smoke.tsx` with esbuild (`--loader:.css=empty --jsx=automatic --platform=node`), run with `node tests_ts/jsdom-harness.cjs <bundle> [url]` | all screens render incl. the environment screen; browser runtime pipeline end-to-end; entering a mode loads its dashboard/zones without restarting the camera; a digital control is confirmed in the mode layer and leaves physical twins untouched; all five signature screens respond to injected frames while issuing no command; the non-hospital views expose separate CAM 1 / CAM 2 panes and the object feed carries the gesture transform; frontend ↔ live FastAPI over REST+WS incl. failure paths and workspace persistence |
 
 None of the automated tests needs a camera or an Arduino board.
@@ -293,11 +298,11 @@ None of the automated tests needs a camera or an Arduino board.
 | Problem | Fix |
 |---|---|
 | *Camera could not start / in use* | Close Teams/Zoom/other apps; try another index in Settings; Windows: Settings → Privacy → Camera → allow desktop apps. |
-| Backend: `Could not download the hand model` | Download `hand_landmarker.task` from the URL printed in the error to `backend/vision/assets/`. |
+| **`MediaPipe Tasks failed … Unable to open zip archive`** / *Camera could not start* | `hand_landmarker.task` is corrupt — usually a truncated or HTML-fetched download. Run `scripts\fetch_model.bat` (it validates and restores the shipped copy); or delete `backend\vision\assets\hand_landmarker.task` and retry. |
 | `pip install mediapipe` fails | Use Python 3.11 or 3.12 (64-bit). Check `python --version`. |
 | UI shows *Browser runtime* though backend is running | Open the UI from `http://127.0.0.1:8000` (or set the URL in Settings → Connection). |
 | Browser camera blocked | Camera needs `https://` or `http://localhost`/`127.0.0.1`; `file://` works in most browsers but may prompt each time. |
-| Browser: *Hand model could not be loaded* | The WASM/model are fetched once from a CDN — connect once, or use the pointer simulator / Python backend. |
+| Browser: *Hand model could not be loaded* | The message names every URL tried and what each returned (HTTP status, web page, truncated file). Run `scripts\fetch_model.bat` so `/mediapipe/hand_landmarker.task` and `/mediapipe/wasm/` are served locally; the pointer simulator and the Python backend still work regardless. |
 | Hand not detected / flickers | Face a lit scene, keep the palm ≥ 40 cm from the lens, avoid a busy skin-coloured background. |
 | Activation never completes | Hold the palm *still* (stability ≥ 0.5) for 0.7 s; lower *Landmark smoothing* alpha if jittery. |
 | Selection stays in *SELECTING* | See the reason line: `UNSTABLE` → steadier hand or lower stability threshold; `LOW_CONFIDENCE` → approach in a straight line, or lower the minimum confidence. |

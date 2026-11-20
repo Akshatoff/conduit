@@ -332,6 +332,8 @@ export function CameraStage({ fill = false, className }: { fill?: boolean; class
   const stateTone = STATE_TONE[intent.state]
   const showBackendVideo = runtimeKind === 'backend' && running && previewOn
   const showHole = !running
+  // A model/runtime problem is not a camera problem: name it correctly so the fix is obvious.
+  const modelProblem = /hand model|mediapipe runtime|hand_landmarker/i.test(camera.error ?? '')
 
   return (
     <div className={cn('overflow-hidden rounded-xl border border-line bg-black/60', fill && 'h-full', className)}>
@@ -416,7 +418,15 @@ export function CameraStage({ fill = false, className }: { fill?: boolean; class
                 {camera.state === 'error' || camera.state === 'disconnected' ? <TriangleAlert className="size-8 text-warn" /> : <Camera className="size-8 text-muted" />}
                 <div>
                   <p className="text-sm font-medium text-ink">
-                    {camera.state === 'error' ? 'Camera could not start' : camera.state === 'disconnected' ? 'Camera disconnected' : inputSource === 'pointer' ? 'Pointer simulator is stopped' : 'Camera is off'}
+                    {camera.state === 'error'
+                      ? modelProblem
+                        ? 'Hand tracking could not start'
+                        : 'Camera could not start'
+                      : camera.state === 'disconnected'
+                        ? 'Camera disconnected'
+                        : inputSource === 'pointer'
+                          ? 'Pointer simulator is stopped'
+                          : 'Camera is off'}
                   </p>
                   <p className="mx-auto mt-1 max-w-md text-xs leading-relaxed text-muted">
                     {camera.error ?? (inputSource === 'pointer' ? 'Move the mouse over this panel to drive a synthetic hand through the same landmark → intent pipeline.' : 'Video is processed locally and is never recorded or uploaded. Press start to begin.')}
