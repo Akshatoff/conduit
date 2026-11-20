@@ -12,8 +12,9 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Callable, Optional
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.api import routes, ws
@@ -56,6 +57,23 @@ def create_app(settings: Optional[AppSettings] = None, db_url: Optional[str] = N
     assets = Path(os.getenv("CONDUIT_ASSETS", "public/assets"))
     if assets.exists():
         app.mount("/assets", StaticFiles(directory=str(assets)), name="assets")
+
+    # The hand-tracking model (and the MediaPipe WASM runtime copied by scripts/fetch_model.py) are
+    # served locally so the browser runtime never depends on a CDN. The explicit route wins over the
+    # static mount and also covers a model that only exists in backend/vision/assets/.
+    @app.get("/mediapipe/hand_landmarker.task", include_in_schema=False)
+    def hand_landmarker_model() -> FileResponse:
+        from backend.vision.hand_tracker import TrackerUnavailable, ensure_model
+
+        try:
+            model = ensure_model()
+        except TrackerUnavailable as e:
+            raise HTTPException(status_code=503, detail=str(e)) from e
+        return FileResponse(str(model), media_type="application/octet-stream", filename=model.name)
+
+    mediapipe_dir = Path(os.getenv("CONDUIT_MEDIAPIPE", "public/mediapipe"))
+    if mediapipe_dir.exists():
+        app.mount("/mediapipe", StaticFiles(directory=str(mediapipe_dir)), name="mediapipe")
 
     dist = Path(os.getenv("CONDUIT_DIST", "dist"))
     if dist.exists():

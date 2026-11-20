@@ -9,9 +9,12 @@ __pycache__/
 data/*.db
 data/settings.json
 backend/vision/assets/*.task
+# MediaPipe WASM runtime copied out of node_modules by scripts/fetch_model.py
+public/mediapipe/wasm/
 .DS_Store
 # temporary test bundles
 .parity.cjs
 .modes.cjs
 .ui.cjs
 .backend-smoke.cjs
+.model.cjs

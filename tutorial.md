@@ -326,6 +326,8 @@ same selection and confirmation pipeline.
 
 | Symptom | Checks |
 |---|---|
+| *Camera could not start* and the log says `MediaPipe Tasks failed … Unable to open zip archive` | The hand model file is corrupt (a cut-off or HTML-fetched download). Run `scripts\fetch_model.bat` — it validates the shipped model at `public/mediapipe/hand_landmarker.task` and restores it; or delete `backend\vision\assets\hand_landmarker.task` and retry. |
+| Browser mode: *Hand model could not be loaded* | The message lists every URL tried and what each returned. Run `scripts\fetch_model.bat` so `/mediapipe/hand_landmarker.task` and `/mediapipe/wasm/` are local, or use the pointer simulator. |
 | Nothing activates | Camera running? Hand fully visible? Hold open palm still for the activation hold; check the activation gesture in Settings. |
 | Zone highlights but does not select | Increase stillness, stay in the zone for the full dwell, lower the stability threshold slightly, or check confidence. |
 | Pinch does not confirm | Make a **new** pinch after selection; hold about 0.2 s; check confirmation timeout and gesture mapping. |

@@ -16,11 +16,23 @@ import { applyDigitalCommand, recordPhysicalOutcome } from '../modes/actions'
 import { digitalControl, getMode } from '../modes/registry'
 import type { ModeId } from '../modes/types'
 import { logCommandEvent, logIntentEvent } from './logging'
+import { loadTaskModel, pickWasmBase } from './modelAsset'
 import type { Runtime } from './types'
 
 const SETTINGS_KEY = 'conduit.settings.v1'
-const WASM_BASE = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.2.3/wasm'
-const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'
+// The model and the WASM runtime are served from public/mediapipe/ (the repo ships the model, and
+// scripts/fetch_model.py copies the runtime out of node_modules). The CDN entries are only fallbacks:
+// on a filtered network the CDN can return an HTML block page, which MediaPipe reports as the
+// unhelpful "Unable to open zip archive".
+const WASM_BASES = [
+  '/mediapipe/wasm',
+  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.2.3/wasm',
+  'https://unpkg.com/@mediapipe/tasks-vision@1.2.3/wasm',
+]
+const MODEL_URLS = [
+  '/mediapipe/hand_landmarker.task',
+  'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+]
 
 const set = useConduit.setState
 const get = useConduit.getState
@@ -171,7 +183,8 @@ export class LocalRuntime implements Runtime {
       this.releaseStream()
       this.running = false
       const msg = e instanceof Error ? e.message : String(e)
-      set({ camera: { state: 'error', active: false, fps: 0, error: `Hand model could not be loaded (${msg}). It is fetched once from a CDN — check connectivity, or use the pointer simulator / Python backend.`, available: false, camera_index: 0 } })
+      set({ camera: { state: 'error', active: false, fps: 0, error: `Hand model could not be loaded: ${msg}`, available: false, camera_index: 0 } })
+      pushLog({ channel: 'system', level: 'error', title: 'Hand model could not be loaded', detail: msg })
       return
     }
     this.smoother = new PositionSmoother(this.settings.camera.smoothing_alpha)
@@ -182,9 +195,17 @@ export class LocalRuntime implements Runtime {
 
   private async createLandmarker(): Promise<Landmarker> {
     const { FilesetResolver, HandLandmarker } = await import('@mediapipe/tasks-vision')
-    const fileset = await FilesetResolver.forVisionTasks(WASM_BASE)
+    // Validate the model before handing it over: MediaPipe's own error for a bad body is the
+    // cryptic "Unable to open zip archive", so we fetch + check here and pass a buffer.
+    const model = await loadTaskModel(MODEL_URLS)
+    let fileset
+    try {
+      fileset = await FilesetResolver.forVisionTasks(await pickWasmBase(WASM_BASES))
+    } catch (e) {
+      throw new Error(`${e instanceof Error ? e.message : String(e)}. Run scripts\\fetch_model.bat to copy the runtime out of node_modules, then retry.`)
+    }
     const mk = (delegate: 'GPU' | 'CPU') =>
-      HandLandmarker.createFromOptions(fileset, { baseOptions: { modelAssetPath: MODEL_URL, delegate }, runningMode: 'VIDEO', numHands: 2, minHandDetectionConfidence: 0.6, minHandPresenceConfidence: 0.5, minTrackingConfidence: 0.5 })
+      HandLandmarker.createFromOptions(fileset!, { baseOptions: { modelAssetBuffer: model.bytes, delegate }, runningMode: 'VIDEO', numHands: 2, minHandDetectionConfidence: 0.6, minHandPresenceConfidence: 0.5, minTrackingConfidence: 0.5 })
     try {
       return (await mk('GPU')) as unknown as Landmarker
     } catch {
