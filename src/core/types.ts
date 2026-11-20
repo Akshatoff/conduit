@@ -13,7 +13,7 @@ export interface Zone {
   y1: number
   /** Explicit command action. Omitted = toggle the device state (classic behaviour). */
   action?: string | null
-  /** `physical` = Arduino Uno node, `digital` = mode-layer UI control (never hardware). */
+  /** `physical` = phone node (torch / screen / vibration), `digital` = mode-layer UI control (never hardware). */
   kind?: 'physical' | 'digital'
   /** Short helper text shown on the mode dashboard / camera overlay. */
   hint?: string
@@ -51,7 +51,7 @@ export interface AppSettings {
   workspace_mode: string
   hardware_mode: 'simulation' | 'hardware'
   interaction_mode: 'conduit' | 'baseline'
-  arduino: { port: string; baud: number; timeout_s: number }
+  phone: { adb_path: string; serial: string; timeout_s: number; pulse_ms: number }
   camera: { index: number; width: number; height: number; smoothing_alpha: number }
   privacy: { preview_stream: boolean; store_video: boolean; log_landmarks: boolean }
   intent: IntentConfig
@@ -190,6 +190,7 @@ export interface CommandResult {
   latency_ms: number | null
   ack_latency_ms: number | null
   acknowledged: boolean
+  verified: boolean
   executed_on: string
   digital?: boolean
 }
@@ -201,12 +202,15 @@ export interface DeviceTwin {
   hardware: string
   actions: string[]
   safe_state: string
+  adb_command?: string
+  readback_note?: string
   confirmed_state: string
   state_source: string
   simulated: boolean
+  verified: boolean
   connection: 'simulated' | 'connected' | 'disconnected'
   last_command: { command_id: string; device: string; action: string; source: string; status: string; at: number; detail?: string; confidence?: number | null } | null
-  last_ack: { command_id: string; status: string; actual_state: string | null; at: number; simulated: boolean } | null
+  last_ack: { command_id: string; status: string; actual_state: string | null; at: number; simulated: boolean; verified?: boolean } | null
   error: string | null
   pending_command_id: string | null
   updated_at: number

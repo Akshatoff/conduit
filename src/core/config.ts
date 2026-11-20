@@ -1,19 +1,35 @@
 import type { AppSettings, IntentConfig, Zone } from './types'
 
+// The physical outputs are the phone's three real actuators. Ids are shared with the Python
+// backend (backend/hardware/models.py) and the node that drives them over ADB.
 export const DEVICE_SPECS: Record<
   string,
-  { id: string; name: string; type: string; hardware: string; actions: string[]; states: string[]; safe: string }
+  { id: string; name: string; type: string; hardware: string; actions: string[]; states: string[]; safe: string; adb: string; readbackNote: string }
 > = {
-  lighting: { id: 'lighting', name: 'Lighting', type: 'led', hardware: 'LED on D3 (+220R)', actions: ['ON', 'OFF'], states: ['ON', 'OFF'], safe: 'OFF' },
-  access: { id: 'access', name: 'Access control', type: 'servo_latch', hardware: 'SG90 servo on D9 · 0° locked / 90° unlocked', actions: ['LOCK', 'UNLOCK'], states: ['LOCKED', 'UNLOCKED'], safe: 'LOCKED' },
+  torch: {
+    id: 'torch', name: 'Phone torch', type: 'flashlight', hardware: 'Rear camera torch (LED) via ADB',
+    actions: ['ON', 'OFF'], states: ['ON', 'OFF'], safe: 'OFF', adb: 'adb shell cmd torch set on|off',
+    readbackNote: 'ADB cannot report torch state on most phones; the node falls back to a screen flash when the torch is not exposed.',
+  },
+  screen: {
+    id: 'screen', name: 'Screen flash', type: 'display', hardware: 'Display backlight at full brightness + wake',
+    actions: ['ON', 'OFF'], states: ['ON', 'OFF'], safe: 'OFF', adb: 'adb shell settings put system screen_brightness 255',
+    readbackNote: '',
+  },
+  vibration: {
+    id: 'vibration', name: 'Vibration', type: 'haptic', hardware: 'Phone vibration motor (repeating pulse)',
+    actions: ['ON', 'OFF'], states: ['ON', 'OFF'], safe: 'OFF', adb: 'adb shell cmd vibrator vibrate 700',
+    readbackNote: 'The vibration motor has no readable state over ADB; the node reports how many pulses it sent.',
+  },
 }
 
-export const ACTION_TO_STATE: Record<string, string> = { ON: 'ON', OFF: 'OFF', LOCK: 'LOCKED', UNLOCK: 'UNLOCKED' }
+export const ACTION_TO_STATE: Record<string, string> = { ON: 'ON', OFF: 'OFF' }
 
 export function defaultZones(): Zone[] {
   return [
-    { id: 'lighting', label: 'Lighting', device: 'lighting', x0: 0.05, y0: 0.1, x1: 0.45, y1: 0.55 },
-    { id: 'access', label: 'Access control', device: 'access', x0: 0.55, y0: 0.1, x1: 0.95, y1: 0.55 },
+    { id: 'torch', label: 'Phone torch', device: 'torch', x0: 0.03, y0: 0.1, x1: 0.35, y1: 0.55 },
+    { id: 'screen', label: 'Screen flash', device: 'screen', x0: 0.36, y0: 0.1, x1: 0.66, y1: 0.55 },
+    { id: 'vibration', label: 'Vibration', device: 'vibration', x0: 0.67, y0: 0.1, x1: 0.97, y1: 0.55 },
   ]
 }
 
@@ -52,18 +68,17 @@ export function defaultSettings(): AppSettings {
     workspace_mode: 'hospital',
     hardware_mode: 'simulation',
     interaction_mode: 'conduit',
-    arduino: { port: '', baud: 9600, timeout_s: 2.0 },
+    phone: { adb_path: '', serial: '', timeout_s: 8.0, pulse_ms: 700 },
     camera: { index: 0, width: 640, height: 480, smoothing_alpha: 0.5 },
     privacy: { preview_stream: true, store_video: false, log_landmarks: false },
     intent: defaultIntentConfig(),
   }
 }
 
-export function toggleAction(device: string, current: string | null | undefined, action?: string | null): string {
+export function toggleAction(_device: string, current: string | null | undefined, action?: string | null): string {
   // Mode controls may declare an explicit action (e.g. OPEN_RECORD). Physical controls without
   // one keep the historical toggle semantics.
   if (action) return action
-  if (device === 'access') return current === 'UNLOCKED' ? 'LOCK' : 'UNLOCK'
   return current === 'ON' ? 'OFF' : 'ON'
 }
 

@@ -36,12 +36,12 @@ async def test_full_pipeline_confirms_twin_and_persists(rt):
     d.activate()
     d.deliberate_select(LIGHT_X)
     assert rt.engine.state.value == "AWAITING_CONFIRMATION"
-    assert rt.controller.twin["lighting"]["confirmed_state"] == "OFF"
+    assert rt.controller.twin["torch"]["confirmed_state"] == "OFF"
     d.pinch(LIGHT_X, 0.33, 0.4)
     await settle()
     d.hold("pinch", LIGHT_X, 0.33, 0.1)
-    assert rt.controller.twin["lighting"]["confirmed_state"] == "ON"
-    assert rt.controller.twin["lighting"]["simulated"] is True
+    assert rt.controller.twin["torch"]["confirmed_state"] == "ON"
+    assert rt.controller.twin["torch"]["simulated"] is True
     assert rt.engine.state.value in ("COMPLETED", "READY")
 
     types = []
@@ -79,7 +79,7 @@ async def test_comparative_session_baseline_vs_conduit(rt):
     d.gone(0.5)
     await settle()
     rt.analytics.end_trial()
-    rt.analytics.start_trial("intended", "lighting", "deliberate")
+    rt.analytics.start_trial("intended", "torch", "deliberate")
     d.hold("open_palm", 0.5, 0.82, 1.1)
     d.deliberate_select(LIGHT_X)
     d.pinch(LIGHT_X, 0.33, 0.4)
@@ -101,7 +101,7 @@ async def test_comparative_session_baseline_vs_conduit(rt):
     b = rt.analytics.stop_session()["metrics"]
     assert b["false_activation_rate"] == 1.0
     # Baseline fired again through the controller; it toggles the LED from ON back to OFF.
-    assert rt.controller.twin["lighting"]["confirmed_state"] == "OFF"
+    assert rt.controller.twin["torch"]["confirmed_state"] == "OFF"
 
 
 async def test_mode_switch_blocked_during_session(rt):
@@ -119,7 +119,7 @@ async def test_simulated_link_failure_surfaces_in_intent_engine(rt):
     await settle()
     d.hold("pinch", LIGHT_X, 0.33, 0.1)
     assert rt.engine.state.value in ("ERROR", "READY")
-    assert rt.controller.twin["lighting"]["connection"] == "disconnected"
+    assert rt.controller.twin["torch"]["connection"] == "disconnected"
     assert rt.repo.recent_commands()[0]["execution_status"] == "DISCONNECTED"
 
 
@@ -137,16 +137,16 @@ def test_api_health_status_and_devices(client):
     s = client.get("/api/system/status").json()
     assert s["hardware_mode"] == "simulation" and s["privacy"]["video_stored"] is False
     devs = client.get("/api/devices").json()
-    assert {d["id"] for d in devs["devices"]} == {"lighting", "access"} and devs["simulated"] is True
-    assert client.get("/api/devices/lighting").status_code == 200
+    assert {d["id"] for d in devs["devices"]} == {"torch", "screen", "vibration"} and devs["simulated"] is True
+    assert client.get("/api/devices/torch").status_code == 200
     assert client.get("/api/devices/nope").status_code == 404
 
 
 def test_api_manual_test_is_flagged_and_confirmed(client):
-    r = client.post("/api/devices/lighting/test", json={"action": "on"}).json()
+    r = client.post("/api/devices/torch/test", json={"action": "on"}).json()
     assert r["status"] == "CONFIRMED" and r["source"] == "manual_test" and r["simulated"] is True
-    assert client.get("/api/devices/lighting").json()["confirmed_state"] == "ON"
-    bad = client.post("/api/devices/lighting/test", json={"action": "UNLOCK"}).json()
+    assert client.get("/api/devices/torch").json()["confirmed_state"] == "ON"
+    bad = client.post("/api/devices/torch/test", json={"action": "LOCK"}).json()
     assert bad["status"] == "REJECTED"
     assert client.get("/api/commands").json()["commands"][0]["source"] in ("manual_test",)
 
@@ -171,21 +171,22 @@ def test_api_interaction_controls_and_mode(client):
     assert client.get("/api/intent/status").json()["mode"] == "baseline"
 
 
-def test_api_serial_port_listing(client):
-    r = client.get("/api/hardware/ports").json()
-    assert isinstance(r["ports"], list)          # empty on a machine with no serial hardware
+def test_api_phone_listing(client):
+    r = client.get("/api/hardware/phone").json()
+    assert isinstance(r["devices"], list)        # nothing plugged into this machine
+    assert "adb" in r and (r["error"] or r["hint"] or r["devices"])
 
 
 def test_api_settings_roundtrip_and_hardware_mode_without_serial_port(client):
     s = client.get("/api/settings").json()
-    assert s["arduino"]["baud"] == 9600 and s["arduino"]["port"] == ""
+    assert s["phone"]["adb_path"] == "" and s["phone"]["serial"] == ""
     s["intent"]["min_confidence"] = 0.8
     assert client.put("/api/settings", json=s).json()["intent"]["min_confidence"] == 0.8
     assert client.get("/api/intent/status").json()["config"]["min_confidence"] == 0.8
     r = client.post("/api/hardware/mode", json={"mode": "hardware"}).json()
-    assert r["mode"] == "hardware" and r["hardware"]["baud"] == 9600
+    assert r["mode"] == "hardware" and "adb" in r["hardware"] and "capabilities" in r["hardware"]
     assert all(d["connection"] == "disconnected" and d["confirmed_state"] == "UNKNOWN" for d in r["devices"])
-    res = client.post("/api/devices/lighting/test", json={"action": "ON"}).json()
+    res = client.post("/api/devices/torch/test", json={"action": "ON"}).json()
     assert res["status"] == "DISCONNECTED" and res["acknowledged"] is False
     assert client.post("/api/hardware/mode", json={"mode": "simulation"}).json()["mode"] == "simulation"
 

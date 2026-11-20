@@ -12,7 +12,7 @@ A mode is configuration, workflow and presentation — never a second Intent Eng
                               │            Interaction controller / command validation      │
                               │                │                        │                   │
                               │       shared device node          mode digital layer        │
-                              │       (Arduino Uno / simulation)        (UI workflows)           │
+                              │          (phone / simulation)           (UI workflows)           │
                               │                │                        │                   │
                               │        ACK + state read-back      mode_action event         │
                               │                          │                                  │
@@ -39,7 +39,7 @@ Every environment uses the same six steps:
 3. **Select** — dwell ≥ `min_dwell_s`, stability ≥ threshold, confidence ≥ `min_confidence`.
 4. **Confirm** — a *separate* confirmation gesture (pinch by default).
 5. **Execute** — either a physical device command or a labelled digital mode action.
-6. **Verify** — physical: node ACK + independent state read-back; digital: acknowledged by the mode layer.
+6. **Verify** — physical: node ACK, then CONFIRMED only when an independent read-back exists (screen brightness; torch and vibration stay acknowledged); digital: acknowledged by the mode layer.
 
 Accidental movement (a sweep, a hand crossing the rails) produces `TRANSIT` / `LEFT_ZONE`
 rejections and no action. Cooldowns, duplicate prevention, confirmation timeout, cancel (fist) and
@@ -52,7 +52,7 @@ no-hand timeout are unchanged from the original Conduit engine.
 | field | meaning |
 |---|---|
 | `action` | explicit command action (e.g. `OPEN_RECORD`). Omitted = classic toggle behaviour. |
-| `kind` | `physical` (shared Arduino Uno output: `lighting` LED / `access` servo) or `digital` (mode-layer UI control). |
+| `kind` | `physical` (phone output: `torch` / `screen` / `vibration`) or `digital` (mode-layer UI control). |
 | `hint` | short helper copy for the mode dashboard. |
 
 The Intent Engine passes `zone.action` into the existing action resolution. Existing configs with
@@ -90,11 +90,11 @@ analytics reflect the command that was authorised.
 
 | Mode | Environment | Primary problem | Gesture controls | Physical outputs |
 |---|---|---|---|---|
-| **Hospital** | Ward workstation / shared clinical display | Check information while hands are occupied, without touching a shared screen | overview, records, imaging zoom, checklist, procedure step, timer, assistance, lamp | shared LED |
-| **Semiconductor** | Simulated cleanroom workstation | Navigate process instructions and inspection data with gloved hands | next stage, inspect/zoom, defect category, confirm record, checklist, equipment LED, model access | LED + servo |
-| **Industrial** | Equipment service bay | Read instructions and record findings while holding tools | manual, next step, complete step, fault report, timer, assistance, equipment LED, service latch | LED + servo |
-| **Food processing** | Commercial kitchen prep line | Follow a recipe/timer without touching a shared screen | recipe, next step, ingredients, timer, QC check, order, assistance, pass lamp | shared LED |
-| **Accessibility** | Adaptive desktop | One fixed interaction method excludes people | next, select, read, back, desk lamp + live settings | shared LED |
+| **Hospital** | Ward workstation / shared clinical display | Check information while hands are occupied, without touching a shared screen | overview, records, imaging zoom, checklist, procedure step, timer, assistance, call torch | phone torch |
+| **Semiconductor** | Simulated cleanroom workstation | Navigate process instructions and inspection data with gloved hands | next stage, inspect/zoom, defect category, confirm record, checklist, equipment torch, access flash | phone torch + screen flash |
+| **Industrial** | Equipment service bay | Read instructions and record findings while holding tools | manual, next step, complete step, fault report, timer, assistance, equipment torch, access buzz | phone torch + vibration |
+| **Food processing** | Commercial kitchen prep line | Follow a recipe/timer without touching a shared screen | recipe, next step, ingredients, timer, QC check, order, assistance, pass torch | phone torch |
+| **Accessibility** | Adaptive desktop | One fixed interaction method excludes people | next, select, read, back, desk torch + live settings | phone torch |
 
 Each mode ships a fictional demonstration workflow, a guided demo script that auto-advances as
 actions are authorised, per-mode interaction history and a **Reset demo** action.
@@ -108,13 +108,13 @@ actions are authorised, per-mode interaction history and a **Reset demo** action
 ### Mode B — Semiconductor / cleanroom workstation
 * Five simulated stages (lithography → etch → deposition → planarisation → inspection).
 * Dashboard wafer map (deterministic). **Signature screen:** CAM 1 tracks the hands; pinch zooms **CAM 2** in, a still open hand zooms out, point-drag pans.
-* Equipment status dashboard; LED equipment indicator and SG90 model access.
+* Equipment status dashboard; phone torch indicator and screen-flash access marker.
 * **No** fab/MES connection, cleanliness certification, contamination-prevention claim or process validation.
 
 ### Mode C — Industrial maintenance / field operations
 * Simulated pump readings, digital manual, inspection checklist, maintenance timer.
 * Dashboard machine diagram. **Signature screen:** fist rotation turns **CAM 2**, pinch zooms in, a still open hand zooms out, point-drag pans, horizontal swipe pages repair steps; CAM 1 stays raw.
-* Simulated fault report and assistance request; LED indicator and model access latch.
+* Simulated fault report and assistance request; torch indicator and vibration access alert.
 * **No** machinery, PLC, interlock or safety-system connection.
 
 ### Mode D — Food processing / commercial kitchen
@@ -149,9 +149,9 @@ endpoint, no parallel control path. `GET /api/system/status` now also reports `w
 
 ## 4. Digital Twin
 
-* Shared physical outputs (LED on D3 / servo latch on D9) keep the original ACK + read-back lifecycle.
+* The phone's three outputs keep the ACK → read-back lifecycle; torch and vibration are acknowledged only, the screen brightness is read back.
 * The Twin page adds a **mode indicators** panel with explicit `node` vs `ui` labels.
-* Simulation is always labelled SIMULATED; hardware without a configured serial port shows UNKNOWN and never fakes an ACK.
+* Simulation is always labelled SIMULATED; hardware without a reachable phone shows UNKNOWN and never fakes an ACK.
 * No mode claims that a physical device responded when only the simulation did.
 
 ## 5. Analytics
@@ -190,7 +190,7 @@ local databases.
 3. **Semiconductor** — switch environment (camera keeps running).
    * Advance stage, then use **Signature screen**: CAM 1 shows the tracked hands, CAM 2 the object camera.
      Pinch to zoom CAM 2 in, hold an open hand still to zoom out (fist/point reset after a pinch), point-drag to pan. Choose CAM 2 in **Settings → Camera** if more than one camera is connected.
-   * Toggle **EQUIP LED** / **ACCESS**; show the ACK → read-back lifecycle on the Twin page.
+   * Toggle **EQUIP TORCH** / **ACCESS FLASH**; show the ACK → read-back lifecycle on the Twin page.
    * Optional: *Simulate link failure* and repeat → DISCONNECTED / UNKNOWN, no fake success.
 4. **Industrial** — open manual, advance step, complete checklist, raise simulated fault; show history.
    In **Signature screen**, rotate a fist to turn CAM 2, pinch to zoom in, hold an open hand still to zoom out, swipe to browse steps;

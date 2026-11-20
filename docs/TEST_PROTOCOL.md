@@ -46,12 +46,12 @@ Perform the *same list* in both modes. Randomise the order once and keep it.
 
 | ID | Scenario | Mode B procedure |
 |---|---|---|
-| D1 | Toggle lighting | open palm (hold still) → move steadily into *Lighting* → hold → pinch |
-| D2 | Rotate the servo | same, *Access control* zone |
-| D3 | Toggle access control | same, *Access control* zone |
+| D1 | Toggle the torch | open palm (hold still) → move steadily into *Torch* → hold → pinch |
+| D2 | Trigger the screen flash | same, *Screen flash* zone |
+| D3 | Toggle vibration | same, *Vibration* zone |
 | D4 | Toggle a device, then change mind | enter zone, hold, **fist** → expect cancel (record as *unintended*: nothing should change) |
 
-Mode A procedure for D1–D3: show the mapped gesture (open palm = lighting, fist = access). There are two physical outputs: an LED and a servo.
+Mode A procedure for D1–D3: show the mapped gesture (open palm = torch, fist = vibration). There are three physical outputs on the phone: torch, screen flash and vibration.
 
 **Unintended (accidental)**
 

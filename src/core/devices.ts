@@ -13,7 +13,7 @@ export interface DeviceCommand {
   source: string
   confidence?: number | null
 }
-interface Ack { command_id: string; device: string; status: string; actual_state?: string | null; detail?: string | null; simulated?: boolean }
+interface Ack { command_id: string; device: string; status: string; actual_state?: string | null; detail?: string | null; simulated?: boolean; verified?: boolean }
 
 export class NodeError extends Error {}
 
@@ -58,17 +58,17 @@ export class SimulatedNode implements DeviceNode {
 }
 
 /**
- * The Arduino Uno is attached by USB serial, which only the Python backend can open.
+ * The phone is driven with ADB, which only the Python backend can run.
  * In the browser-only runtime hardware mode is therefore unavailable and every call fails
  * loudly: no acknowledgement is ever fabricated in its place.
  */
-export class ArduinoSerialUnavailableNode implements DeviceNode {
-  name = 'arduino-uno'
+export class PhoneAdbUnavailableNode implements DeviceNode {
+  name = 'phone-adb'
   simulated = false
-  constructor(public port = '', public baud = 9600, public timeoutS = 2) {}
+  constructor(public adbPath = '', public serial = '', public timeoutS = 8) {}
   private fail(): never {
     throw new NodeError(
-      'Hardware mode needs the Python backend: a browser cannot open the Arduino USB serial port. Start scripts\\run.bat and reload.',
+      'Hardware mode needs the Python backend: a browser cannot run adb. Start scripts\\run.bat, connect the phone and reload.',
     )
   }
   async health(): Promise<void> {
@@ -99,7 +99,7 @@ export function validateCommand(cmd: DeviceCommand, minConfidence: number): stri
 
 export class DeviceController {
   sim = new SimulatedNode()
-  hw = new ArduinoSerialUnavailableNode()
+  hw = new PhoneAdbUnavailableNode()
   twin: Record<string, DeviceTwin> = {}
   private results = new Map<string, CommandResult>()
   private chain: Promise<unknown> = Promise.resolve()
@@ -113,7 +113,9 @@ export class DeviceController {
     for (const s of Object.values(DEVICE_SPECS)) {
       this.twin[s.id] = {
         id: s.id, name: s.name, type: s.type, hardware: s.hardware, actions: s.actions, safe_state: s.safe,
+        adb_command: s.adb, readback_note: s.readbackNote,
         confirmed_state: simMode ? s.safe : 'UNKNOWN', state_source: simMode ? 'simulation' : 'none', simulated: simMode,
+        verified: simMode,
         connection: simMode ? 'simulated' : 'disconnected', last_command: null, last_ack: null, error: null,
         pending_command_id: null, updated_at: Date.now() / 1000,
       }
@@ -137,8 +139,8 @@ export class DeviceController {
     for (const id of Object.keys(this.twin)) this.emitDevice(id, `Mode switched to ${mode}`)
   }
 
-  configureHardware(port: string, baud: number, timeoutS: number) {
-    Object.assign(this.hw, { port, baud, timeoutS })
+  configureHardware(adbPath: string, serial: string, timeoutS: number) {
+    Object.assign(this.hw, { adbPath, serial, timeoutS })
   }
 
   async refresh(): Promise<boolean> {
@@ -146,13 +148,17 @@ export class DeviceController {
     try {
       await node.health()
       const states = await node.readState()
-      for (const [id, st] of Object.entries(states)) {
-        const t = this.twin[id]
-        if (!t) continue
-        const conn = node.simulated ? 'simulated' : 'connected'
-        const changed = t.confirmed_state !== st || t.connection !== conn
-        Object.assign(t, { confirmed_state: st, connection: conn, state_source: node.simulated ? 'simulation' : 'device_readback', simulated: node.simulated, error: null, updated_at: Date.now() / 1000 })
-        if (changed) this.emitDevice(id, 'State read back from node')
+      const conn = node.simulated ? 'simulated' : 'connected'
+      for (const t of Object.values(this.twin)) {
+        const st = states[t.id]
+        const changed = (st !== undefined && t.confirmed_state !== st) || t.connection !== conn
+        if (st !== undefined) {
+          Object.assign(t, { confirmed_state: st, state_source: node.simulated ? 'simulation' : 'device_readback', verified: true })
+        } else {
+          Object.assign(t, { verified: node.simulated })
+        }
+        Object.assign(t, { connection: conn, simulated: node.simulated, error: null, updated_at: Date.now() / 1000 })
+        if (changed) this.emitDevice(t.id, st !== undefined ? 'State read back from node' : 'Device connected')
       }
       return true
     } catch (e) {
@@ -164,7 +170,7 @@ export class DeviceController {
   private markDisconnected(why: string) {
     for (const [id, t] of Object.entries(this.twin)) {
       const was = t.connection
-      Object.assign(t, { connection: 'disconnected', error: `Node unreachable: ${why}`, pending_command_id: null, confirmed_state: 'UNKNOWN', state_source: 'none', updated_at: Date.now() / 1000 })
+      Object.assign(t, { connection: 'disconnected', error: `Phone unreachable: ${why}`, pending_command_id: null, confirmed_state: 'UNKNOWN', state_source: 'none', verified: false, updated_at: Date.now() / 1000 })
       if (was !== 'disconnected') this.emitDevice(id, 'Node disconnected')
     }
   }
@@ -189,7 +195,7 @@ export class DeviceController {
   }
 
   private result(cmd: DeviceCommand, status: CommandStatus, detail: string, node: DeviceNode, extra: Partial<CommandResult> = {}): CommandResult {
-    return { command_id: cmd.command_id, device: cmd.device, action: cmd.action, source: cmd.source, status, detail, confirmed_state: null, simulated: node.simulated, latency_ms: null, ack_latency_ms: null, acknowledged: false, executed_on: node.name, ...extra }
+    return { command_id: cmd.command_id, device: cmd.device, action: cmd.action, source: cmd.source, status, detail, confirmed_state: null, simulated: node.simulated, latency_ms: null, ack_latency_ms: null, acknowledged: false, verified: false, executed_on: node.name, ...extra }
   }
 
   private async run(cmd: DeviceCommand): Promise<CommandResult> {
@@ -213,7 +219,7 @@ export class DeviceController {
     const tSend = performance.now()
     let ack: Ack
     try {
-      ack = await Promise.race([node.send(cmd), sleep(3000).then(() => Promise.reject(new NodeError('timeout waiting for acknowledgement')))])
+      ack = await Promise.race([node.send(cmd), sleep(8000).then(() => Promise.reject(new NodeError('timeout waiting for acknowledgement')))])
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       if (!sandbox) this.markDisconnected(msg)
@@ -235,7 +241,7 @@ export class DeviceController {
       this.emit('command_rejected', { ...res })
       return res
     }
-    if (!sandbox && twin) twin.last_ack = { command_id: cmd.command_id, status: ack.status, actual_state: ack.actual_state ?? null, at: Date.now() / 1000, simulated: !!ack.simulated }
+    if (!sandbox && twin) twin.last_ack = { command_id: cmd.command_id, status: ack.status, actual_state: ack.actual_state ?? null, at: Date.now() / 1000, simulated: !!ack.simulated, verified: !!ack.verified }
     this.emit('command_acknowledged', { ...ack, ack_latency_ms: Math.round(ackMs * 100) / 100, executed_on: node.name, sandbox })
 
     const target = ACTION_TO_STATE[cmd.action]
@@ -247,14 +253,25 @@ export class DeviceController {
       readErr = e instanceof Error ? e.message : String(e)
     }
     const total = performance.now() - t0
+    const spec = DEVICE_SPECS[cmd.device]
     let res: CommandResult
-    if (actual === target && ack.actual_state === target) {
-      res = this.result(cmd, 'CONFIRMED', `${DEVICE_SPECS[cmd.device].name} confirmed ${target}`, node, { confirmed_state: target, ack_latency_ms: ackMs, acknowledged: true, latency_ms: total })
+    if (readErr) {
+      res = this.result(cmd, 'FAILED', `State read-back failed: ${readErr}`, node, { ack_latency_ms: ackMs, acknowledged: true, latency_ms: total })
+    } else if (actual === undefined) {
+      // No independent read-back on this transport (torch/vibration over ADB). Say so; never
+      // dress the acknowledgement up as a confirmed device state.
+      if (ack.actual_state !== target) {
+        res = this.result(cmd, 'FAILED', `Node reported ${ack.actual_state ?? 'nothing'}, expected ${target}`, node, { ack_latency_ms: ackMs, acknowledged: true, latency_ms: total })
+      } else {
+        res = this.result(cmd, 'ACKNOWLEDGED', `${spec.name} ${target} acknowledged — ${spec.readbackNote || 'no independent read-back for this output'}`, node, { confirmed_state: target, ack_latency_ms: ackMs, acknowledged: true, verified: false, latency_ms: total })
+      }
+    } else if (actual === target && ack.actual_state === target) {
+      res = this.result(cmd, 'CONFIRMED', `${spec.name} confirmed ${target}${ack.detail ? ` — ${ack.detail}` : ''}`, node, { confirmed_state: target, ack_latency_ms: ackMs, acknowledged: true, verified: true, latency_ms: total })
     } else {
-      res = this.result(cmd, 'FAILED', readErr ? `State read-back failed: ${readErr}` : `State mismatch: expected ${target}, device reports ${actual ?? ack.actual_state}`, node, { ack_latency_ms: ackMs, acknowledged: true, latency_ms: total, confirmed_state: actual ?? null })
+      res = this.result(cmd, 'FAILED', `State mismatch: expected ${target}, device reports ${actual ?? ack.actual_state}`, node, { ack_latency_ms: ackMs, acknowledged: true, latency_ms: total, confirmed_state: actual ?? null })
     }
     this.finalize(cmd, res, sandbox)
-    if (res.status !== 'CONFIRMED') this.emit('command_rejected', { ...res })
+    if (res.status !== 'CONFIRMED' && res.status !== 'ACKNOWLEDGED') this.emit('command_rejected', { ...res })
     return res
   }
 
@@ -266,7 +283,7 @@ export class DeviceController {
     }
     twin.pending_command_id = null
     if (twin.last_command) twin.last_command = { ...twin.last_command, status: res.status, detail: res.detail }
-    if (res.status === 'CONFIRMED') Object.assign(twin, { confirmed_state: res.confirmed_state, error: null, state_source: res.simulated ? 'simulation' : 'device_readback', simulated: res.simulated, updated_at: Date.now() / 1000 })
+    if (res.status === 'CONFIRMED' || res.status === 'ACKNOWLEDGED') Object.assign(twin, { confirmed_state: res.confirmed_state, error: null, state_source: res.simulated ? 'simulation' : res.verified ? 'device_readback' : 'node_ack', simulated: res.simulated, verified: res.verified, updated_at: Date.now() / 1000 })
     else if (res.status !== 'DISCONNECTED') Object.assign(twin, { error: res.detail, updated_at: Date.now() / 1000 })
     this.emitDevice(cmd.device, res.detail)
   }

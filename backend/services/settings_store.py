@@ -21,10 +21,10 @@ def load_settings(path: Path | None = None) -> AppSettings:
         except Exception:
             s = AppSettings()  # corrupt file -> defaults
     # environment overrides (see .env.example)
-    if os.getenv("CONDUIT_SERIAL_PORT"):
-        s.arduino.port = os.environ["CONDUIT_SERIAL_PORT"]
-    if os.getenv("CONDUIT_SERIAL_BAUD"):
-        s.arduino.baud = int(os.environ["CONDUIT_SERIAL_BAUD"])
+    if os.getenv("CONDUIT_ADB"):
+        s.phone.adb_path = os.environ["CONDUIT_ADB"]
+    if os.getenv("CONDUIT_PHONE_SERIAL"):
+        s.phone.serial = os.environ["CONDUIT_PHONE_SERIAL"]
     if os.getenv("CONDUIT_CAMERA_INDEX"):
         s.camera.index = int(os.environ["CONDUIT_CAMERA_INDEX"])
     if os.getenv("CONDUIT_MODE") in ("simulation", "hardware"):

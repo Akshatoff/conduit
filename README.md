@@ -22,10 +22,10 @@ gets its own intent logic**. See [`docs/MODES.md`](docs/MODES.md).
 Target settings: healthcare workstations, cleanroom manufacturing, food preparation, industrial service
 bays and accessibility-oriented environments — anywhere touching a control surface is inconvenient or undesirable.
 
-> **Prototype, not a certified system.** Conduit drives isolated low-voltage demo electronics only: one LED and an
-> SG90 servo with a model latch, on an **Arduino Uno over USB serial**. There is no motor or fan. It must not be connected
-> to mains, real door locks, medical or industrial equipment, and it makes **no claims** about preventing infection or
-> guaranteeing sterility.
+> **Prototype, not a certified system.** Conduit's hardware node is a **mobile phone**: the rear torch, the screen
+> backlight and the vibration motor, driven from the PC over **USB with `adb`** — no root and no companion app. It must not
+> be connected to mains, real door locks, medical or industrial equipment, and it makes **no claims** about preventing
+> infection or guaranteeing sterility.
 
 ---
 
@@ -35,7 +35,7 @@ bays and accessibility-oriented environments — anywhere touching a control sur
 |---|---|
 | **Spatial perception** | OpenCV + MediaPipe Hand Landmarker (Python) → 21 landmarks, palm centre, finger extension, pinch distance, openness, orientation, smoothing, movement history. Same pipeline in the browser (MediaPipe WASM). |
 | **Intent intelligence** | `backend/intent/` — trajectory analyser + deterministic 12-state machine + interpretable weighted score + temporal validation, cooldown, duplicate and repeat-selection prevention. Independent of MediaPipe. |
-| **Physical execution** | `backend/hardware/` — one controller for **simulation** and a real **Arduino Uno** (USB serial, ASCII line protocol): validation, command ids, acknowledgement, independent state read-back, timeouts, idempotency, failsafe. Firmware in `firmware/conduit_uno/`. |
+| **Physical execution** | `backend/hardware/` — one controller for **simulation** and a real **phone node** driven over USB with `adb` (torch, screen flash, vibration): validation, command ids, acknowledgement, independent read-back where the phone exposes it, timeouts, idempotency, safe-state release. Setup in [`docs/HARDWARE.md`](docs/HARDWARE.md). |
 | **Impact verification** | Digital twin updated *only* after ack + read-back; SQLite event/command log; Baseline-vs-Conduit trial analytics with CSV export (`docs/TEST_PROTOCOL.md`). |
 
 ## Operational environments
@@ -80,27 +80,29 @@ hand distance:
 
 | Environment | Problem it demonstrates | Signature interaction | Hardware |
 |---|---|---|---|
-| **Hospital / clinical** | Accessing information while hands are occupied, without repeatedly touching a shared screen | Fictional patient overview / records; hold up 1, 2 or 3 fingers to choose the matching local X-ray, pinch zooms in, open hand zooms out, point-drag pans; checklist, timer, assistance request | shared LED |
-| **Semiconductor / cleanroom** | Following process instructions and inspection data with gloved hands | 5-stage simulated wafer flow; **Signature screen: CAM 1 tracks hands, CAM 2 zooms/pans the object camera** with pinch/open-hand and point-drag; defect categories, wafer dashboard, records, equipment | LED status, servo model access |
-| **Industrial maintenance** | Reading procedures and recording findings while holding tools | Equipment readings, digital manual, inspection checklist, maintenance timer, fault report + assistance; **Signature screen rotates/zooms the CAM 2 object camera** with fist rotation, pinch/open-hand zoom, point-drag pan and swipe paging | LED indicator, servo service latch |
-| **Food processing** | Following recipes and timers without touching a shared screen | Three fictional recipes, ingredient quantities, preparation steps, cooking timer, QC checklist, order board; **Signature screen shows CAM 1 + CAM 2** while a circular hand motion sets the timer, pinch starts/pauses and lower-edge swipe pages steps | shared LED |
-| **Accessibility / adaptive** | A single fixed input method excludes people | Live dwell / confidence / stability / **gesture sensitivity** / confirmation-gesture configuration, large-control preset; **Signature screen magnifies CAM 2** with pinch/open-hand or large −/+ buttons | shared LED |
+| **Hospital / clinical** | Accessing information while hands are occupied, without repeatedly touching a shared screen | Fictional patient overview / records; hold up 1, 2 or 3 fingers to choose the matching local X-ray, pinch zooms in, open hand zooms out, point-drag pans; checklist, timer, assistance request | phone torch as call light |
+| **Semiconductor / cleanroom** | Following process instructions and inspection data with gloved hands | 5-stage simulated wafer flow; **Signature screen: CAM 1 tracks hands, CAM 2 zooms/pans the object camera** with pinch/open-hand and point-drag; defect categories, wafer dashboard, records, equipment | phone torch + screen flash |
+| **Industrial maintenance** | Reading procedures and recording findings while holding tools | Equipment readings, digital manual, inspection checklist, maintenance timer, fault report + assistance; **Signature screen rotates/zooms the CAM 2 object camera** with fist rotation, pinch/open-hand zoom, point-drag pan and swipe paging | phone torch + vibration |
+| **Food processing** | Following recipes and timers without touching a shared screen | Three fictional recipes, ingredient quantities, preparation steps, cooking timer, QC checklist, order board; **Signature screen shows CAM 1 + CAM 2** while a circular hand motion sets the timer, pinch starts/pauses and lower-edge swipe pages steps | phone torch |
+| **Accessibility / adaptive** | A single fixed input method excludes people | Live dwell / confidence / stability / **gesture sensitivity** / confirmation-gesture configuration, large-control preset; **Signature screen magnifies CAM 2** with pinch/open-hand or large −/+ buttons | phone torch |
 
 Every environment includes a guided demonstration script (auto-advancing as authorised actions occur),
 a **Reset demo** action, per-environment interaction history and explicit safety/scope statements.
 
 ### Digital vs physical execution
 
-Zones may be `physical` (the shared Arduino Uno outputs: `lighting`, `access`) or `digital` (mode-layer UI controls). Both must pass the
+Zones may be `physical` (the phone outputs: `torch`, `screen`, `vibration`) or `digital` (mode-layer UI controls). Both must pass the
 full interaction-authorisation pipeline. Digital actions are acknowledged by the mode layer and labelled
 `digital / simulated` — they never reach the device controller and never update a physical twin. Physical
-states are still only confirmed after node ACK **and** independent read-back. Analytics record the active
-environment with every session and trial, and the CSV gains a `workspace` column.
+states are only reported after a real node ACK, and only marked **CONFIRMED** when the phone also gives an
+independent read-back (screen brightness). The torch and the vibration motor expose no readable state over
+`adb`, so those commands stop at `ACKNOWLEDGED` and the UI says *ack only* — nothing is dressed up as verified.
+Analytics record the active environment with every session and trial, and the CSV gains a `workspace` column.
 
 Interaction protocol (all gestures configurable in Settings):
 
 1. **Open palm**, held still → activate interaction mode (still palm outside a zone for 2 s deactivates).
-2. **Move steadily into a control zone** (Lighting or Access) and hold → *select* (never by gesture alone).
+2. **Move steadily into a control zone** (Torch, Screen flash or Vibration) and hold → *select* (never by gesture alone).
 3. **Pinch** (a *new* pinch after selection) → confirm → validated → executed.
 4. **Closed fist** → cancel; held ~1 s with nothing selected = emergency stop.
 
@@ -123,9 +125,11 @@ No machine-learning model is used: a transparent rule/score system is easier to 
 
 ## Two ways to run (both are first-class)
 
-### A. Full system — Python backend + Arduino Uno (Windows)
+### A. Full system — Python backend + phone node (Windows)
 
-Requirements: **Python 3.11+**, **Node 20+**, a webcam. (Optional: Arduino Uno + LED + servo, see `docs/HARDWARE.md`.)
+Requirements: **Python 3.11+**, **Node 20+**, a webcam. Optional but needed for real hardware: an Android phone,
+a USB **data** cable and `adb` (see [`docs/HARDWARE.md`](docs/HARDWARE.md)). Without a phone the app runs exactly the
+same against the simulated node.
 
 ```powershell
 git clone <repo> conduit; cd conduit
@@ -174,13 +178,15 @@ The full staged sequence is in [`docs/MODES.md`](docs/MODES.md#recommended-judge
    thresholds → **pinch** → the panel opens with a digital acknowledgement.
 3. **Accident:** sweep a hand across both rails → nothing executes; the history/log shows a `TRANSIT`
    rejection with its reason. This is the heart of the project: gesture ≠ intent.
-4. **Digital Twin:** select **LAMP** (shared LED) and show the lifecycle `Sent → Acknowledged → State
-   confirmed`; badge *SIMULATED STATE* (or real Arduino). Click *Simulate link failure*, repeat → `DISCONNECTED`,
-   no ack, twin shows `UNKNOWN` (never a fake success). Then open **Hardware** and press *LED ON* / *Rotate to 90°*:
-   the bench writes one `manual_test` command per press and shows the read-back.
+4. **Digital Twin:** select **CALL TORCH** and show the lifecycle `Sent → Acknowledged` — the twin says
+   *acknowledged* / *ack only* because `adb` cannot read the torch back, and the badge says *SIMULATED STATE*
+   (or real phone). Then select **ACCESS FLASH** for the full `Sent → Acknowledged → State confirmed` path, which
+   the phone's brightness setting makes readable. Click *Simulate link failure*, repeat → `DISCONNECTED`, no ack,
+   twin shows `UNKNOWN` (never a fake success). Then open **Hardware** and press *Torch on* / *Flash on* / *Buzz*:
+   the bench writes one `manual_test` command per press and shows the ack plus any read-back.
 5. **Semiconductor:** change environment (camera keeps running). Advance a process stage, open the fictional
-   wafer inspection, switch defect category, confirm a simulated record, then toggle **EQUIP LED** and
-   **ACCESS**; show the mode indicators on the Twin page (`node` vs `ui`).
+   wafer inspection, switch defect category, confirm a simulated record, then toggle **EQUIP TORCH** and
+   **ACCESS FLASH**; show the mode indicators on the Twin page (`node` vs `ui`, and *ack only* where nothing is readable).
 6. **Signature screens:** open **Signature screen** in each environment. Hospital holds up 1, 2 or 3 fingers to load `first.jpg`, `second.jpg` or `third.jpg`.
    Everywhere else you get CAM 1 (gesture tracking with landmarks) and CAM 2 (the object camera), each
    labelled. Point CAM 2 at the object and perform the gesture — pinch zoom, open-hand zoom-out, fist rotation, point-drag pan, large
@@ -209,7 +215,7 @@ The full staged sequence is in [`docs/MODES.md`](docs/MODES.md#recommended-judge
                        hardware/controller.py  ── validation.py
                           │ SENT → ACK → read-back → CONFIRMED / FAILED / DISCONNECTED
                  ┌────────┴─────────┐                         (digital devices never reach here)
-        SimulatedNode     ArduinoSerialNode (USB serial) ─▶ firmware/conduit_uno ─▶ LED / servo
+        SimulatedNode     PhoneAdbNode (USB · adb) ─▶ phone torch / screen backlight / vibration motor
                           ▼
    digital twin state + SQLite (devices, commands, intent_events, test_sessions, trials + workspace)
                           ▼
@@ -237,7 +243,7 @@ src/                         React + Vite + TS + Tailwind UI (the "frontend/")
   runtime/   backendRuntime.ts (REST+WS)   localRuntime.ts (in-browser)
   pages/ components/ store.ts
              pages: ModeSelectPage, WorkspacePage, LivePage, TwinPage, HardwarePage, AnalyticsPage, SettingsPage
-firmware/conduit_uno/        Arduino Uno sketch  docs/  HARDWARE.md TEST_PROTOCOL.md
+docs/                       HARDWARE.md (phone node setup)  MODES.md  TEST_PROTOCOL.md
 tests/                       pytest (Python)     tests_ts/  parity + UI smoke tests (TypeScript)
 ```
 
@@ -251,7 +257,8 @@ from the root; responsibilities are otherwise separated as specified.
 `POST /api/devices/{id}/test` (**manual test**, flagged `manual_test`) · `POST /api/interaction/activate|deactivate|cancel|mode` ·
 `GET /api/intent/status|events` · `GET /api/commands` · `GET /api/analytics/summary` ·
 `POST /api/analytics/session/start|stop` · `POST /api/analytics/trial/start|end` · `GET /api/analytics/export` (CSV) ·
-`GET|PUT /api/settings` (`workspace_mode`, per-mode `intent.zones`, `arduino` serial port) · `GET /api/hardware/ports` · `POST /api/hardware/mode|connect|simulate_fault`.
+`GET|PUT /api/settings` (`workspace_mode`, per-mode `intent.zones`, `phone`: `adb_path`, `serial`, `timeout_s`, `pulse_ms`) ·
+`GET /api/hardware/phone` (`adb`, `devices`, `error`, `hint`) · `POST /api/hardware/mode|connect|simulate_fault`.
 OpenAPI docs at `/docs`.
 
 ### WebSocket `/ws`
@@ -268,9 +275,9 @@ malformed messages return a `system_error` and never crash the socket.
 * Video is processed locally, held in memory only, never written to disk or uploaded; preview can be disabled.
 * Camera-active indicator always visible; interaction must be explicitly activated; fist/emergency cancel at any time.
 * No command executes below `min_confidence`, without a separate pinch, during cooldown, or as a repeat.
-* **Baseline gesture commands are routed to the simulation only**, never to hardware, and the firmware refuses them too.
-* Hardware mode never fabricates an acknowledgement; on loss of the node the twin shows `UNKNOWN` and the firmware
-  falls back to safe outputs (LED off, servo 0° / LOCKED) after 5 s without host contact.
+* **Baseline gesture commands are executed on the simulated node only**, never on the phone.
+* Hardware mode never fabricates an acknowledgement; when the phone stops answering `adb` the twin shows `UNKNOWN`,
+  and the node stops every vibration pulse, releases the torch and restores the saved screen brightness.
 * *Manual test* buttons exist only on the **Hardware** bench and the Digital Twin device cards; they are labelled and
   logged with source `manual_test`. The mode control surface has **no manual shortcut** — every mode action must be
   authorised by the Intent Engine.
@@ -285,13 +292,13 @@ scripts\test.bat
 
 | Suite | Command | Covers |
 |---|---|---|
-| Python (126 tests) | `python -m pytest -q` | landmark features & gestures (rotation/scale invariance), second-hand landmarks exposed for signature views, trajectory maths, **intent state transitions**, confidence threshold, accidental-movement rejection, confirmation/cancel/timeouts, cooldown & duplicate prevention, command validation, simulation acks, **Arduino serial protocol (ack, wrong id, silence, rejection, state mismatch)**, analytics definitions, SQLite, REST + WebSocket, full pipeline (synthetic landmarks → engine → controller → twin → DB → analytics), **mode zones with explicit actions, digital execution never touching the twin, workspace analytics, API workspace round-trip**, **hand-model file validation (HTML/truncated downloads rejected, corrupt file repaired)** |
+| Python (128 tests) | `python -m pytest -q` | landmark features & gestures (rotation/scale invariance), second-hand landmarks exposed for signature views, trajectory maths, **intent state transitions**, confidence threshold, accidental-movement rejection, confirmation/cancel/timeouts, cooldown & duplicate prevention, command validation, simulation acks, **phone node over adb (fake transport: ack, silence, rejection, brightness read-back, torch fallback, unauthorised disconnect)**, analytics definitions, SQLite, REST + WebSocket, full pipeline (synthetic landmarks → engine → controller → twin → DB → analytics), **mode zones with explicit actions, digital execution never touching the twin, workspace analytics, API workspace round-trip**, **hand-model file validation (HTML/truncated downloads rejected, corrupt file repaired)** |
 | TS parity | `npm run test:parity` | TypeScript engine makes the same decisions as the Python engine |
 | TS modes | `npm run test:modes` | five environments, registry/workflow/zone integrity, one shared engine authorises each mode, accidental sweep rejected, mode history/reset |
 | TS model assets | `npm run test:model` | `.task` bundle validation (prefix tolerance, HTML/LFS/truncated rejection), candidate ordering, actionable errors, local-first WASM runtime probing |
 | UI smoke (optional) | `npm i --no-save jsdom ws`, bundle `tests_ts/ui-smoke.tsx` / `backend-smoke.tsx` with esbuild (`--loader:.css=empty --jsx=automatic --platform=node`), run with `node tests_ts/jsdom-harness.cjs <bundle> [url]` | all screens render incl. the environment screen; browser runtime pipeline end-to-end; entering a mode loads its dashboard/zones without restarting the camera; a digital control is confirmed in the mode layer and leaves physical twins untouched; all five signature screens respond to injected frames while issuing no command; the non-hospital views expose separate CAM 1 / CAM 2 panes and the object feed carries the gesture transform; frontend ↔ live FastAPI over REST+WS incl. failure paths and workspace persistence |
 
-None of the automated tests needs a camera or an Arduino board.
+None of the automated tests needs a camera or a phone.
 
 ## Troubleshooting
 
@@ -307,7 +314,7 @@ None of the automated tests needs a camera or an Arduino board.
 | Activation never completes | Hold the palm *still* (stability ≥ 0.5) for 0.7 s; lower *Landmark smoothing* alpha if jittery. |
 | Selection stays in *SELECTING* | See the reason line: `UNSTABLE` → steadier hand or lower stability threshold; `LOW_CONFIDENCE` → approach in a straight line, or lower the minimum confidence. |
 | Hand mirrored / wrong side | Coordinates are in selfie (mirrored) space; zones are drawn in the same space. |
-| Arduino *Disconnected* | `docs/HARDWARE.md` → troubleshooting (port in use, baud, Serial Monitor still open). Hardware mode never simulates an ack. |
+| Phone *Disconnected* | `docs/HARDWARE.md` → troubleshooting (USB data cable, USB debugging + *Allow* prompt, `adb devices` shows `unauthorized`, two `adb` servers). Hardware mode never simulates an ack. |
 | Hospital X-ray shows “No image at …” | Add `first.jpg`, `second.jpg`, `third.jpg` to `public/assets/xray/` (see the README there) and reload. The backend serves that folder directly, so no rebuild is needed. |
 | Port 8000 busy | `uvicorn … --port 8001`, then set the URL in Settings → Connection. |
 
@@ -316,8 +323,9 @@ None of the automated tests needs a camera or an Arduino board.
 * **Real-camera tracking was not exercised in the automated build environment** (no webcam / GL libraries there). The
   vision path is verified against the MediaPipe API surface and with synthetic landmark hands; expect to tune the
   default thresholds (stability, dwell, smoothing) to your camera and distance during the first rehearsal.
-* **Firmware has not been compiled/flashed in CI**; it follows the documented serial protocol and the host side of the
-  protocol is tested against a fake serial transport.
+* **No phone is attached in CI**: the node is tested against a fake `adb` transport. On real hardware the torch is
+  often not reachable without root, in which case the node falls back to a full-brightness screen flash and says so.
+  Torch and vibration cannot be read back, so those states are acknowledged, never confirmed.
 * Single hand, normalised 2D interaction on one RGB camera. MediaPipe's `z` is only a *relative* depth estimate
   (reported as `relative_depth_estimate`), never a measured distance.
 * Gesture heuristics are rule-based (extension ratios, pinch distance); unusual hand shapes may classify as `other`.
@@ -332,9 +340,9 @@ None of the automated tests needs a camera or an Arduino board.
   tuning or the accessibility large-control preset.
 * Workflow completion is shown live per environment (steps and percentage) but is not persisted as a trial
   metric; the analytics summary records session/trial outcomes, latency, ACK rate and environment.
-* The browser runtime cannot open a USB serial port, so real hardware requires the Python backend; the browser runtime
-  instead reports hardware as unavailable and never fabricates an acknowledgement.
+* The browser runtime cannot run `adb`, so real hardware requires the Python backend on the machine with the phone;
+  the browser runtime instead reports hardware as unavailable and never fabricates an acknowledgement.
 
 ## License / use
 
-Hackathon prototype. Use only with isolated low-voltage demonstration hardware.
+Hackathon prototype. Use only with your own phone's torch, screen and vibration motor — nothing else is actuated.

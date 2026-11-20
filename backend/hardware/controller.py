@@ -2,12 +2,13 @@
 
 One code path for simulation and real hardware:
 
-    validate -> SENT -> (node) ACKNOWLEDGED -> state read-back -> CONFIRMED
+    validate -> SENT -> (phone) ACKNOWLEDGED -> state read-back -> CONFIRMED
 
-The digital-twin state (``confirmed_state``) is ONLY updated when the node's acknowledgement
-and an independent state read-back agree with the commanded state. Nothing is updated
-optimistically when a command is merely sent. In real-hardware mode an acknowledgement is
-never fabricated: if the Arduino Uno does not answer over USB serial, the command is reported
+The digital-twin state (``confirmed_state``) is updated from the phone only when the acknowledgement
+and an independent state read-back agree. Two of the three phone outputs (torch, vibration) cannot be
+queried back through ADB on most phones: those commands end at **ACKNOWLEDGED** with
+``verified=False`` instead of being dressed up as CONFIRMED. In real-hardware mode an
+acknowledgement is never fabricated: if the phone does not answer over ADB the command is reported
 DISCONNECTED/FAILED.
 """
 from __future__ import annotations
@@ -16,8 +17,10 @@ import asyncio
 import time
 from typing import Callable, Dict, Optional
 
-from .models import (ACTION_TO_STATE, DEVICE_SPECS, HARDWARE_SOURCES, CommandResult, CommandStatus, DeviceCommand)
-from .nodes import ArduinoSerialNode, DeviceNode, NodeError, SimulatedNode
+from .models import (ACTION_TO_STATE, DEVICE_SPECS, HARDWARE_SOURCES, CommandResult, CommandStatus,
+                     DeviceCommand)
+from .nodes import DeviceNode, NodeError, SimulatedNode
+from .phone import PhoneAdbNode
 from .validation import validate_command
 
 EmitFn = Callable[[str, dict], None]
@@ -31,14 +34,14 @@ class DeviceController:
     def __init__(
         self,
         sim: Optional[SimulatedNode] = None,
-        hw: Optional[ArduinoSerialNode] = None,
+        hw: Optional[PhoneAdbNode] = None,
         mode: str = "simulation",
         emit: Optional[EmitFn] = None,
         min_confidence: float = 0.0,
-        command_timeout_s: float = 3.0,
+        command_timeout_s: float = 8.0,
     ) -> None:
         self.sim = sim or SimulatedNode()
-        self.hw = hw or ArduinoSerialNode()
+        self.hw = hw or PhoneAdbNode()
         self.mode = mode
         self.emit: EmitFn = emit or (lambda t, d: None)
         self.min_confidence = min_confidence
@@ -55,9 +58,10 @@ class DeviceController:
             self.twin[did] = {
                 "id": did, "name": spec.name, "type": spec.type, "hardware": spec.hardware,
                 "actions": spec.actions, "safe_state": spec.safe_state,
+                "adb_command": spec.adb_command, "readback_note": spec.readback_note,
                 "confirmed_state": spec.safe_state if sim_mode else "UNKNOWN",
                 "state_source": "simulation" if sim_mode else "none",
-                "simulated": sim_mode,
+                "simulated": sim_mode, "verified": sim_mode,
                 "connection": "simulated" if sim_mode else "disconnected",
                 "last_command": None, "last_ack": None, "error": None,
                 "pending_command_id": None, "updated_at": _now(),
@@ -72,7 +76,15 @@ class DeviceController:
             "node": self.active_node.name,
             "simulated": self.mode == "simulation",
             "devices": list(self.twin.values()),
-            "hardware": {"port": self.hw.port, "baud": self.hw.baud, "timeout_s": self.hw.timeout_s},
+            "hardware": {
+                "adb": self.hw.adb,
+                "serial": self.hw.serial,
+                "timeout_s": self.hw.timeout_s,
+                "model": self.hw.info.get("model"),
+                "manufacturer": self.hw.info.get("manufacturer"),
+                "android": self.hw.info.get("android"),
+                "capabilities": dict(self.hw.capabilities),
+            },
         }
 
     @property
@@ -98,12 +110,12 @@ class DeviceController:
         for did in self.twin:
             self._emit_device_state(did, f"Mode switched to {mode}")
 
-    def configure_hardware(self, port: str, baud: int, timeout_s: float) -> None:
-        """Point the controller at a serial port (e.g. COM3) and baud rate (9600 for the Uno)."""
-        self.hw.configure(port, baud, timeout_s)
+    def configure_hardware(self, adb_path: str, serial: str, timeout_s: float) -> None:
+        """Point the controller at a phone: adb executable, device serial (blank = first device)."""
+        self.hw.configure(adb_path, serial, timeout_s)
 
     async def refresh(self) -> bool:
-        """Health-check the active node and read back device states (device registration + heartbeat)."""
+        """Health-check the active node and read back whatever it can (device registration + heartbeat)."""
         node = self.active_node
         try:
             await node.health()
@@ -111,29 +123,35 @@ class DeviceController:
         except NodeError as e:
             self._mark_disconnected(str(e))
             return False
-        for did, st in states.items():
-            if did in self.twin:
-                t = self.twin[did]
-                changed = (t["confirmed_state"], t["connection"]) != (st, "simulated" if node.simulated else "connected")
-                t.update(confirmed_state=st, connection="simulated" if node.simulated else "connected",
-                         state_source="simulation" if node.simulated else "device_readback",
-                         simulated=node.simulated, error=None, updated_at=_now())
-                if changed:
-                    self._emit_device_state(did, "State read back from node")
+        simulated = node.simulated
+        for did, t in self.twin.items():
+            state = states.get(did)
+            connection = "simulated" if simulated else "connected"
+            changed = (t["confirmed_state"], t["connection"]) != (state or t["confirmed_state"], connection)
+            if state is not None:
+                t.update(confirmed_state=state, state_source="simulation" if simulated else "device_readback",
+                         simulated=simulated, verified=True)
+            else:
+                t.update(state_source="simulation" if simulated else "none", simulated=simulated,
+                         verified=simulated)
+            t.update(connection=connection, error=None, updated_at=_now())
+            if changed:
+                self._emit_device_state(did, "State read back from node" if state else "Device connected")
         return True
 
     def _mark_disconnected(self, why: str) -> None:
         for did, t in self.twin.items():
             was = t["connection"]
             t["connection"] = "disconnected"
-            t["error"] = f"Node unreachable: {why}"
+            t["error"] = f"Phone unreachable: {why}"
             t["pending_command_id"] = None
-            # we can no longer vouch for the physical state; firmware failsafe returns outputs to safe state
+            # we can no longer vouch for the physical state; the node returns outputs to safe state
             t["confirmed_state"] = "UNKNOWN"
             t["state_source"] = "none"
+            t["verified"] = False
             t["updated_at"] = _now()
             if was != "disconnected":
-                self._emit_device_state(did, "Node disconnected")
+                self._emit_device_state(did, "Phone disconnected")
 
     def set_simulated_fault(self, offline: bool) -> None:
         """Rehearse a communication failure in simulation mode (also triggers the simulated failsafe)."""
@@ -141,6 +159,13 @@ class DeviceController:
         if offline:
             self.sim.failsafe()
             self._mark_disconnected("simulated link failure")
+
+    async def shutdown(self) -> None:
+        """Stop the node cleanly: no buzzing, torch off, screen restored."""
+        try:
+            await self.hw.shutdown()
+        except Exception:  # pragma: no cover - best effort on shutdown
+            pass
 
     # --------------------------------------------------------------- execute
     async def execute(self, cmd: DeviceCommand) -> CommandResult:
@@ -200,7 +225,7 @@ class DeviceController:
 
         if not sandbox and twin is not None:
             twin["last_ack"] = {"command_id": cmd.command_id, "status": ack.status, "actual_state": ack.actual_state,
-                                "at": _now(), "simulated": ack.simulated}
+                                "at": _now(), "simulated": ack.simulated, "verified": ack.verified}
         self.emit("command_acknowledged", {**ack.model_dump(), "ack_latency_ms": round(ack_ms, 2), "executed_on": node.name,
                                            "sandbox": sandbox})
 
@@ -209,23 +234,43 @@ class DeviceController:
         try:
             states = await asyncio.wait_for(node.read_state(), timeout=self.command_timeout_s)
             actual = states.get(cmd.device)
+            readback_err = None
         except (NodeError, asyncio.TimeoutError) as e:
             actual = None
             readback_err = str(e) or "timeout"
-        else:
-            readback_err = None
 
-        if actual == target and ack.actual_state == target:
-            res = self._result(cmd, CommandStatus.CONFIRMED, f"{DEVICE_SPECS[cmd.device].name} confirmed {target}", node,
-                               confirmed_state=target, ack_latency_ms=ack_ms, acknowledged=True,
+        if readback_err is not None:
+            detail = f"State read-back failed: {readback_err}"
+            res = self._result(cmd, CommandStatus.FAILED, detail, node, ack_latency_ms=ack_ms, acknowledged=True,
+                               latency_ms=(time.perf_counter() - t0) * 1000)
+        elif actual is None:
+            # The phone does not expose this output for reading. Say exactly that instead of
+            # pretending the state was verified (torch/vibration over ADB are like this).
+            spec = DEVICE_SPECS[cmd.device]
+            if ack.actual_state != target:
+                res = self._result(cmd, CommandStatus.FAILED,
+                                   f"Node reported {ack.actual_state}, expected {target}", node,
+                                   ack_latency_ms=ack_ms, acknowledged=True,
+                                   latency_ms=(time.perf_counter() - t0) * 1000)
+            else:
+                note = spec.readback_note or "No independent read-back is available for this output."
+                res = self._result(cmd, CommandStatus.ACKNOWLEDGED,
+                                   f"{spec.name} {target} acknowledged — {note}", node,
+                                   confirmed_state=target, ack_latency_ms=ack_ms, acknowledged=True, verified=False,
+                                   latency_ms=(time.perf_counter() - t0) * 1000)
+        elif actual == target and ack.actual_state == target:
+            detail = f"{DEVICE_SPECS[cmd.device].name} confirmed {target}"
+            if ack.detail:
+                detail += f" — {ack.detail}"
+            res = self._result(cmd, CommandStatus.CONFIRMED, detail, node,
+                               confirmed_state=target, ack_latency_ms=ack_ms, acknowledged=True, verified=True,
                                latency_ms=(time.perf_counter() - t0) * 1000)
         else:
-            detail = (f"State read-back failed: {readback_err}" if readback_err
-                      else f"State mismatch: expected {target}, device reports {actual or ack.actual_state}")
+            detail = f"State mismatch: expected {target}, device reports {actual or ack.actual_state}"
             res = self._result(cmd, CommandStatus.FAILED, detail, node, ack_latency_ms=ack_ms, acknowledged=True,
                                latency_ms=(time.perf_counter() - t0) * 1000, confirmed_state=actual)
         self._finalize_twin(cmd, res, sandbox)
-        if res.status != CommandStatus.CONFIRMED:
+        if res.status not in (CommandStatus.CONFIRMED, CommandStatus.ACKNOWLEDGED):
             self.emit("command_rejected", res.model_dump(mode="json"))
         return res
 
@@ -239,10 +284,10 @@ class DeviceController:
         if twin["last_command"]:
             twin["last_command"]["status"] = res.status.value
             twin["last_command"]["detail"] = res.detail
-        if res.status == CommandStatus.CONFIRMED:
+        if res.status in (CommandStatus.CONFIRMED, CommandStatus.ACKNOWLEDGED):
             twin.update(confirmed_state=res.confirmed_state, error=None,
-                        state_source="simulation" if res.simulated else "device_readback",
-                        simulated=res.simulated, updated_at=_now())
+                        state_source="simulation" if res.simulated else ("device_readback" if res.verified else "node_ack"),
+                        simulated=res.simulated, verified=res.verified, updated_at=_now())
         elif res.status != CommandStatus.DISCONNECTED:
             twin["error"] = res.detail
             twin["updated_at"] = _now()

@@ -116,15 +116,15 @@ async def hardware_mode(body: HardwareModeRequest, request: Request):
     return r.controller.snapshot()
 
 
-@router.get("/hardware/ports")
-async def hardware_ports():
-    """Serial ports the backend can see (helps fill in Settings -> Hardware)."""
-    try:
-        from serial.tools import list_ports
-    except ImportError:
-        return {"ports": [], "error": "pyserial is not installed (pip install pyserial)"}
-    ports = await asyncio.get_running_loop().run_in_executor(None, list_ports.comports)
-    return {"ports": [{"device": p.device, "description": p.description} for p in ports]}
+@router.get("/hardware/phone")
+async def hardware_phone(request: Request):
+    """What adb can see right now: the phones, their state and the adb path in use."""
+    from backend.hardware.phone import adb_inventory
+
+    s = rt(request).settings
+    info = await asyncio.to_thread(adb_inventory, s.phone.adb_path, s.phone.timeout_s)
+    info["configured_serial"] = s.phone.serial
+    return info
 
 
 @router.post("/hardware/connect")

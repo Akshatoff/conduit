@@ -7,7 +7,7 @@ const controls: ModeControl[] = [
   { id: 'access.select', device: 'access.select', label: 'Select panel', short: 'SELECT', kind: 'digital', action: 'SELECT_ITEM', hint: 'Choose the focused panel.' },
   { id: 'access.read', device: 'access.read', label: 'Read panel', short: 'READ', kind: 'digital', action: 'READ_ITEM', hint: 'Show the focused content in a larger reading view.' },
   { id: 'access.back', device: 'access.back', label: 'Back', short: 'BACK', kind: 'digital', action: 'BACK', hint: 'Return to the panel grid.' },
-  { id: 'access.lamp', device: 'lighting', label: 'Desk lamp', short: 'LAMP', kind: 'physical', hint: 'Optional low-voltage lamp output.' },
+  { id: 'access.torch', device: 'torch', label: 'Desk torch', short: 'TORCH', kind: 'physical', hint: 'Optional phone torch output over ADB.' },
 ]
 
 export const ACCESSIBILITY_MODE: ModeDefinition = {
@@ -28,7 +28,7 @@ export const ACCESSIBILITY_MODE: ModeDefinition = {
     'Alternative confirmation gesture',
     'Large / standard control-surface presets',
     'Clear textual and visual feedback for every state',
-    'Optional low-voltage desk lamp output',
+    'Optional phone torch output',
   ],
   safety: [
     'Gesture interaction is not suitable for every person or every disability.',
@@ -73,7 +73,7 @@ export const ACCESSIBILITY_MODE: ModeDefinition = {
   twin: [
     { id: 'access.focus', name: 'Focus indicator', type: 'digital', source: 'digital', description: 'Current focus position in the demo panel grid.' },
     { id: 'access.selection', name: 'Selected content', type: 'digital', source: 'digital', description: 'Last deliberately selected demo panel.' },
-    { id: 'access.lamp', name: 'Desk lamp', type: 'actuator', source: 'physical', device: 'lighting', description: 'Optional low-voltage LED, confirmed only after ACK + read-back.' },
+    { id: 'access.torch', name: 'Desk torch', type: 'actuator', source: 'physical', device: 'torch', description: 'Optional phone torch; acknowledged over ADB, never confirmed without read-back.' },
   ],
   analytics: ['Panels focused', 'Deliberate selections', 'Config changes', 'Rejected movements', 'Intent latency'],
   panels: ['grid', 'reading', 'settings'],

@@ -132,7 +132,7 @@ for (const mode of MODES) {
 
 // ------------------------------------------------- analytics stay trial-derived
 const trial = (over: Partial<Trial>): Trial => ({
-  id: 1, session_id: 1, label: 'intended', target: 'lighting', scenario: '', started_at: 100, ended_at: null,
+  id: 1, session_id: 1, label: 'intended', target: 'torch', scenario: '', started_at: 100, ended_at: null,
   executed: false, workspace: 'hospital', executed_device: null, executed_action: null, correct: false,
   ack_confirmed: false, commands_sent: 0, commands_acked: 0, confirmation_requested: false, rejections: 0,
   reasons: [], intent_latency_sum_ms: 0, intent_latency_n: 0, e2e_latency_ms: null, ...over,

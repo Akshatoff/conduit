@@ -17,7 +17,7 @@ import { digitalControl, getMode } from '../modes/registry'
 import type { ModeId } from '../modes/types'
 import { logCommandEvent, logIntentEvent } from './logging'
 import { loadTaskModel, pickWasmBase } from './modelAsset'
-import type { Runtime } from './types'
+import type { PhoneInventory, Runtime } from './types'
 
 const SETTINGS_KEY = 'conduit.settings.v1'
 // The model and the WASM runtime are served from public/mediapipe/ (the repo ships the model, and
@@ -44,7 +44,7 @@ function loadSettings(): AppSettings {
     const raw = localStorage.getItem(SETTINGS_KEY)
     if (!raw) return d
     const s = JSON.parse(raw)
-    return { ...d, ...s, arduino: { ...d.arduino, ...s.arduino }, camera: { ...d.camera, ...s.camera }, privacy: { ...d.privacy, ...s.privacy, store_video: false }, intent: { ...d.intent, ...s.intent, weights: { ...d.intent.weights, ...s.intent?.weights }, gestures: { ...d.intent.gestures, ...s.intent?.gestures } } }
+    return { ...d, ...s, phone: { ...d.phone, ...s.phone }, camera: { ...d.camera, ...s.camera }, privacy: { ...d.privacy, ...s.privacy, store_video: false }, intent: { ...d.intent, ...s.intent, weights: { ...d.intent.weights, ...s.intent?.weights }, gestures: { ...d.intent.gestures, ...s.intent?.gestures } } }
   } catch {
     return d
   }
@@ -83,7 +83,7 @@ export class LocalRuntime implements Runtime {
 
   constructor() {
     this.controller = new DeviceController(this.settings.hardware_mode, (t, d) => this.onDeviceEvent(t, d), this.settings.intent.min_confidence)
-    this.controller.configureHardware(this.settings.arduino.port, this.settings.arduino.baud, this.settings.arduino.timeout_s)
+    this.controller.configureHardware(this.settings.phone.adb_path, this.settings.phone.serial, this.settings.phone.timeout_s)
     this.engine = new IntentEngine(this.settings.intent, this.controller.deviceStates)
     this.baseline = new BaselineController(this.controller.deviceStates)
     this.video = document.createElement('video')
@@ -103,10 +103,10 @@ export class LocalRuntime implements Runtime {
       // mean a mode dashboard is loaded (the app opens on the environment-selection screen).
       activeMode: null,
       settings: this.settings, zones: this.settings.intent.zones, interactionMode: this.settings.interaction_mode, hardwareMode: this.settings.hardware_mode,
-      hardwareInfo: this.settings.arduino, devices: { ...this.controller.twin }, analytics: this.analytics.summary(), link: 'open',
+      hardwareInfo: { ...get().hardwareInfo, ...this.settings.phone }, devices: { ...this.controller.twin }, analytics: this.analytics.summary(), link: 'open',
     })
     window.setInterval(() => {
-      if (this.controller.mode === 'hardware' && this.controller.hw.port) void this.controller.refresh()
+      if (this.controller.mode === 'hardware') void this.controller.refresh()
     }, 2000)
     void this.listCameras()
     pushLog({ channel: 'system', level: 'info', title: 'Browser runtime ready', detail: 'Python backend not detected — running the engine, simulation and analytics locally in this tab.' })
@@ -424,7 +424,7 @@ export class LocalRuntime implements Runtime {
         ? `Digital control '${control!.label}' executed in the mode layer (no physical device)`
         : `Action '${req.action}' is not part of the active mode`,
       confirmed_state: valid ? req.action : null, simulated: true, latency_ms: latency, ack_latency_ms: latency,
-      acknowledged: valid, executed_on: 'mode_ui', digital: true,
+      acknowledged: valid, verified: true, executed_on: 'mode_ui', digital: true,
     }
     logCommandEvent('command_sent', { ...res, status: 'SENT', sandbox: true } as unknown as Record<string, unknown>)
     if (valid) {
@@ -492,17 +492,17 @@ export class LocalRuntime implements Runtime {
     this.persist()
     await this.controller.setMode(m)
     set({ hardwareMode: m, settings: this.settings, devices: { ...this.controller.twin } })
-    if (m === 'hardware' && !this.settings.arduino.port) set({ notice: 'Enter the Arduino serial port (e.g. COM3) in Settings → Hardware and run the Python backend.' })
+    if (m === 'hardware') set({ notice: 'Hardware mode needs the Python backend: a browser cannot run adb. Start scripts\\run.bat with the phone connected.' })
   }
 
-  async listSerialPorts(): Promise<{ device: string; description: string }[]> {
-    // A browser cannot enumerate hardware serial ports; only the Python backend can.
-    return []
+  async phoneInventory(): Promise<PhoneInventory> {
+    // Only the Python backend can run adb; say so instead of pretending nothing is plugged in.
+    return { adb: null, version: null, devices: [], error: 'The browser runtime cannot run adb. Start the Python backend (scripts\\run.bat) to drive the phone.', hint: null }
   }
 
   async connectHardware() {
     const ok = await this.controller.refresh()
-    set({ devices: { ...this.controller.twin }, notice: ok ? 'Node reachable — device states read back.' : 'Node not reachable. In hardware mode no acknowledgement is ever simulated.' })
+    set({ devices: { ...this.controller.twin }, notice: ok ? 'Phone reachable — states read back where the phone exposes them.' : 'Phone not reachable. In hardware mode no acknowledgement is ever simulated.' })
   }
 
   async simulateFault(offline: boolean) {
@@ -520,12 +520,12 @@ export class LocalRuntime implements Runtime {
     this.persist()
     this.engine.setConfig(s.intent)
     this.controller.minConfidence = s.intent.min_confidence
-    this.controller.configureHardware(s.arduino.port, s.arduino.baud, s.arduino.timeout_s)
+    this.controller.configureHardware(s.phone.adb_path, s.phone.serial, s.phone.timeout_s)
     this.smoother.alpha = s.camera.smoothing_alpha
     if (modeChanged) await this.controller.setMode(s.hardware_mode)
     else if (s.hardware_mode === 'hardware') await this.controller.refresh()
     if (s.interaction_mode !== get().interactionMode) await this.setInteractionMode(s.interaction_mode)
-    set({ settings: s, zones: s.intent.zones, hardwareMode: s.hardware_mode, hardwareInfo: s.arduino, devices: { ...this.controller.twin }, notice: 'Settings saved.' })
+    set({ settings: s, zones: s.intent.zones, hardwareMode: s.hardware_mode, hardwareInfo: { ...get().hardwareInfo, ...s.phone }, devices: { ...this.controller.twin }, notice: 'Settings saved.' })
   }
 
   private persist() {

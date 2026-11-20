@@ -61,7 +61,7 @@ export function ModeTwinPanel() {
       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
         {mode.twin.map((t) => {
           const device = t.source === 'physical' && t.device ? devices[t.device] : undefined
-          const value = device ? `${device.confirmed_state}${device.simulated ? ' · simulated' : ''}` : digitalValue(t.id, mode.id, state)
+          const value = device ? `${device.confirmed_state}${device.simulated ? ' · simulated' : device.verified ? ' · read back' : ' · ack only'}` : digitalValue(t.id, mode.id, state)
           return (
             <div key={t.id} className={cn('rounded-lg border p-2.5', t.source === 'physical' ? 'border-teal/25 bg-teal/5' : 'border-line/70 bg-bg/40')}>
               <div className="flex items-center gap-2">
@@ -83,7 +83,7 @@ export function ModeTwinPanel() {
         })}
       </div>
       <p className="mt-3 border-t border-line/60 pt-2 text-[10px] leading-relaxed text-muted">
-        Entries marked <b className="text-accent">UI</b> are digital mode-layer state and are never reported as physical execution. Entries marked <b className="text-teal">node</b> come from the device controller and only show a confirmed state after acknowledgement + read-back.
+        Entries marked <b className="text-accent">UI</b> are digital mode-layer state and are never reported as physical execution. Entries marked <b className="text-teal">node</b> come from the phone controller: they change only after a real acknowledgement, and are only labelled read-back when an independent read-back agrees (the screen backlight).
       </p>
     </Card>
   )

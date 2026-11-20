@@ -48,22 +48,25 @@ export function SettingsPage() {
   const [objectCamera, setObjectCamera] = useState(readObjectCameraId)
   const [objectDevices, setObjectDevices] = useState<{ id: string; label: string }[]>([])
   const [scanningCameras, setScanningCameras] = useState(false)
-  const [serialPorts, setSerialPorts] = useState<{ device: string; description: string }[]>([])
+  const [phoneDevices, setPhoneDevices] = useState<{ serial: string; state: string; model: string }[]>([])
+  const [phoneError, setPhoneError] = useState<string | null>(null)
   const [scanningPorts, setScanningPorts] = useState(false)
 
-  const refreshSerialPorts = async () => {
+  const refreshPhones = async () => {
     if (kind !== 'backend') return
     setScanningPorts(true)
     try {
-      setSerialPorts(await rt().listSerialPorts())
+      const inv = await rt().phoneInventory()
+      setPhoneDevices(inv.devices)
+      setPhoneError(inv.error)
     } finally {
       setScanningPorts(false)
     }
   }
 
   useEffect(() => {
-    if (kind === 'backend') void refreshSerialPorts()
-    // List once per mount; the explicit button rescans after plugging the board in.
+    if (kind === 'backend') void refreshPhones()
+    // Scan once per mount; the explicit button rescans after plugging the phone in.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind])
 
@@ -259,51 +262,55 @@ export function SettingsPage() {
           </div>
         </Card>
 
-        <Card title="Simulation & Arduino Uno" icon={<Cpu className="size-4" />} right={<Pill tone={s.hardware_mode === 'simulation' ? 'warn' : 'teal'}>{s.hardware_mode === 'simulation' ? 'Simulation' : 'Real hardware'}</Pill>}>
+        <Card title="Simulation & phone node" icon={<Cpu className="size-4" />} right={<Pill tone={s.hardware_mode === 'simulation' ? 'warn' : 'teal'}>{s.hardware_mode === 'simulation' ? 'Simulation' : 'Real hardware'}</Pill>}>
           <div className="space-y-4">
             <div className="flex items-center justify-between gap-3 rounded-lg border border-line/70 bg-bg/40 px-3 py-2.5">
               <div>
                 <p className="text-sm font-medium text-ink">Simulation mode</p>
-                <p className="text-[11px] text-muted">Virtual LED + servo; same validation and acknowledgement path. Always available.</p>
+                <p className="text-[11px] text-muted">Virtual torch, screen and vibration; same validation and acknowledgement path. Always available.</p>
               </div>
               <Toggle label="Simulation mode" on={s.hardware_mode === 'simulation'} onChange={(v) => upd((d) => void (d.hardware_mode = v ? 'simulation' : 'hardware'))} />
             </div>
-            <div className="grid gap-3 sm:grid-cols-[1fr_90px_100px]">
-              <Field label="Serial port (Arduino Uno)" hint={kind === 'backend' ? 'USB port of the board, e.g. COM3, /dev/ttyACM0.' : 'Requires the Python backend: a browser cannot open a serial port.'}>
-                <input className={inputCls} list="serial-ports" placeholder="COM3" value={s.arduino.port} onChange={(e) => upd((d) => void (d.arduino.port = e.target.value.trim()))} />
-                <datalist id="serial-ports">
-                  {serialPorts.map((p) => (
-                    <option key={p.device} value={p.device}>
-                      {p.description}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="adb path" hint={kind === 'backend' ? 'Blank = adb on PATH or the usual Android SDK folder.' : 'Requires the Python backend: a browser cannot run adb.'}>
+                <input className={inputCls} list="phone-serials" placeholder="C:\\Android\\platform-tools\\adb.exe" value={s.phone.adb_path} onChange={(e) => upd((d) => void (d.phone.adb_path = e.target.value.trim()))} />
+              </Field>
+              <Field label="Phone serial (optional)" hint="From `adb devices`; blank = the first phone adb reports as ready.">
+                <input className={inputCls} list="phone-serials" placeholder="first ready device" value={s.phone.serial} onChange={(e) => upd((d) => void (d.phone.serial = e.target.value.trim()))} />
+                <datalist id="phone-serials">
+                  {phoneDevices.map((p) => (
+                    <option key={p.serial} value={p.serial}>
+                      {p.model || p.state}
                     </option>
                   ))}
                 </datalist>
               </Field>
-              <Field label="Baud">
-                <select className={inputCls} value={s.arduino.baud} onChange={(e) => upd((d) => void (d.arduino.baud = Number(e.target.value)))}>
-                  {[9600, 19200, 38400, 57600, 115200].map((b) => (
-                    <option key={b} value={b}>
-                      {b}
-                    </option>
-                  ))}
-                </select>
+              <Field label="Command timeout (s)">
+                <input className={inputCls} type="number" step={0.5} min={1} max={30} value={s.phone.timeout_s} onChange={(e) => upd((d) => void (d.phone.timeout_s = Number(e.target.value)))} />
               </Field>
-              <Field label="Timeout (s)">
-                <input className={inputCls} type="number" step={0.5} min={0.5} max={10} value={s.arduino.timeout_s} onChange={(e) => upd((d) => void (d.arduino.timeout_s = Number(e.target.value)))} />
+              <Field label="Vibration pulse (ms)" hint="Length of each buzz in the repeating pattern.">
+                <input className={inputCls} type="number" step={50} min={50} max={5000} value={s.phone.pulse_ms} onChange={(e) => upd((d) => void (d.phone.pulse_ms = Number(e.target.value)))} />
               </Field>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Btn size="sm" onClick={() => void rt().connectHardware()} disabled={dirty}>
                 Test connection {dirty && '(save first)'}
               </Btn>
-              <Btn size="sm" variant="ghost" onClick={() => void refreshSerialPorts()} disabled={kind !== 'backend' || scanningPorts}>
-                <RotateCcw className={cn('size-3.5', scanningPorts && 'animate-spin')} /> {scanningPorts ? 'Scanning…' : 'Find ports'}
+              <Btn size="sm" variant="ghost" onClick={() => void refreshPhones()} disabled={kind !== 'backend' || scanningPorts}>
+                <RotateCcw className={cn('size-3.5', scanningPorts && 'animate-spin')} /> {scanningPorts ? 'Scanning…' : 'Find phones'}
               </Btn>
-              {serialPorts.length === 0 && kind === 'backend' && <span className="text-[11px] text-muted">No serial ports detected.</span>}
+              {kind === 'backend' && phoneDevices.length === 0 && !phoneError && <span className="text-[11px] text-muted">No phone detected.</span>}
+              {phoneDevices.map((p) => (
+                <span key={p.serial} className="font-mono text-[11px] text-muted">
+                  {p.model || p.serial} · {p.state}
+                </span>
+              ))}
             </div>
+            {phoneError && <p className="text-[11px] leading-relaxed text-warn">{phoneError}</p>}
             <p className="text-[11px] leading-relaxed text-muted">
-              The Uno must be running <span className="font-mono">firmware/conduit_uno</span> at 9600 baud, with the Arduino Serial Monitor closed.
-              Outputs: LED on D3, SG90 servo on D9. Isolated low-voltage demo electronics only - no motor, no mains.
+              The phone is driven over USB with <span className="font-mono">adb</span> — no root, no app to install. Enable Developer options → USB debugging and accept
+              the prompt on the phone. Outputs: rear torch, screen backlight and vibration motor. Torch and vibration have no readable state over ADB, so those
+              commands are acknowledged, not confirmed.
             </p>
           </div>
         </Card>

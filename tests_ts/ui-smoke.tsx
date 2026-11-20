@@ -51,35 +51,41 @@ async function main() {
     check(`page "${page}" renders`, text().includes(needle), text().slice(0, 200))
   }
   await act(async () => { useConduit.setState({ page: 'hardware' }); await sleep(150) })
-  check('hardware bench exposes exactly the LED and the servo', /LED · D3/.test(text()) && /Servo · D9/.test(text()) && !/Ventilation/.test(text()), text().slice(0, 300))
-  check('hardware bench has one control per output action', (text().match(/LED ON/g) ?? []).length === 1 && (text().match(/Rotate to 90/g) ?? []).length === 1)
+  check('hardware bench exposes exactly the three phone outputs', /Screen flash/.test(text()) && /cmd vibrator vibrate/.test(text()) && /Rear camera LED/.test(text()) && !/Servo|LED · D3|Ventilation/.test(text()), text().slice(0, 300))
+  check('hardware bench names the adb commands it sends', /cmd torch set/.test(text()) && /settings put system screen_brightness/.test(text()) && /cmd vibrator vibrate/.test(text()))
+  check('hardware bench has one control per output action', (text().match(/Torch on/g) ?? []).length === 1 && (text().match(/Flash on/g) ?? []).length === 1)
   const benchBtn = (label: string) => Array.from(document.querySelectorAll('button')).find((b) => (b.textContent ?? '').trim() === label)
-  await act(async () => { benchBtn('LED ON')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); await sleep(600) })
-  check('bench LED ON confirmed via manual_test + read-back', S().devices.lighting.confirmed_state === 'ON' && S().devices.lighting.last_command?.source === 'manual_test', JSON.stringify(S().devices.lighting))
-  await act(async () => { benchBtn('LED OFF')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); await sleep(600) })
-  check('bench LED OFF confirmed', S().devices.lighting.confirmed_state === 'OFF')
-  await act(async () => { benchBtn('Rotate to 90°')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); await sleep(600) })
-  check('bench servo rotates to 90° (UNLOCKED)', S().devices.access.confirmed_state === 'UNLOCKED' && S().devices.access.last_ack?.status === 'ACKNOWLEDGED', JSON.stringify(S().devices.access))
-  await act(async () => { benchBtn('Rotate to 0°')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); await sleep(600) })
-  check('bench servo returns to 0° (LOCKED)', S().devices.access.confirmed_state === 'LOCKED')
+  await act(async () => { benchBtn('Torch on')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); await sleep(600) })
+  check('bench torch ON goes through manual_test on the simulated node', S().devices.torch.confirmed_state === 'ON' && S().devices.torch.last_command?.source === 'manual_test' && S().devices.torch.simulated === true && S().devices.torch.last_ack?.status === 'ACKNOWLEDGED', JSON.stringify(S().devices.torch))
+  await act(async () => { benchBtn('Torch off')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); await sleep(600) })
+  check('bench torch OFF returns to safe state', S().devices.torch.confirmed_state === 'OFF')
+  await act(async () => { benchBtn('Flash on')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); await sleep(600) })
+  check('bench screen flash confirmed by read-back', S().devices.screen.confirmed_state === 'ON' && S().devices.screen.verified === true, JSON.stringify(S().devices.screen))
+  await act(async () => { benchBtn('Restore')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); await sleep(600) })
+  check('bench screen restore returns to OFF', S().devices.screen.confirmed_state === 'OFF')
+  await act(async () => { benchBtn('Buzz')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); await sleep(600) })
+  check('bench vibration ON acknowledged', S().devices.vibration.confirmed_state === 'ON' && S().devices.vibration.last_ack?.status === 'ACKNOWLEDGED', JSON.stringify(S().devices.vibration))
+  await act(async () => { benchBtn('Silence')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); await sleep(600) })
+  check('bench vibration stops', S().devices.vibration.confirmed_state === 'OFF')
   await act(async () => { useConduit.setState({ page: 'settings' }); await sleep(150) })
   check('settings owns the object-camera index selector', !!document.querySelector('select[aria-label="Object camera index"]'))
   check('analytics shows empty state (no fabricated data)', S().analytics?.has_data === false)
-  check('devices start in safe simulated state', S().devices.lighting?.confirmed_state === 'OFF' && S().devices.access?.confirmed_state === 'LOCKED' && S().devices.lighting?.simulated === true)
+  check('devices start in safe simulated state', S().devices.torch?.confirmed_state === 'OFF' && S().devices.screen?.confirmed_state === 'OFF' && S().devices.vibration?.confirmed_state === 'OFF' && S().devices.torch?.simulated === true)
 
   // ---- drive the pipeline with the pointer simulator
   await act(async () => { useConduit.setState({ inputSource: 'pointer' }); await rt().startVision() })
   check('simulator running', S().camera.state === 'running')
   await hold(0.5, 0.82, 1.2)
   check('open palm activates interaction', S().intent.active, S().intent.reason)
-  await move([0.5, 0.82], [0.25, 0.33], 0.7)
-  await hold(0.25, 0.33, 1.3)
+  await move([0.5, 0.82], [0.19, 0.72], 0.5)
+  await move([0.19, 0.72], [0.19, 0.33], 0.7)
+  await hold(0.19, 0.33, 1.3)
   check('deliberate approach -> AWAITING_CONFIRMATION', S().intent.state === 'AWAITING_CONFIRMATION', `${S().intent.state}: ${S().intent.reason}`)
-  check('twin NOT updated by selection alone', S().devices.lighting.confirmed_state === 'OFF')
-  await hold(0.25, 0.33, 0.6, true)
+  check('twin NOT updated by selection alone', S().devices.torch.confirmed_state === 'OFF')
+  await hold(0.19, 0.33, 0.6, true)
   await sleep(500)
-  check('LED confirmed ON only after ack + read-back', S().devices.lighting.confirmed_state === 'ON', JSON.stringify(S().devices.lighting))
-  check('twin records ack + command', S().devices.lighting.last_ack?.status === 'ACKNOWLEDGED' && S().devices.lighting.last_command?.status === 'CONFIRMED')
+  check('torch ON only after a real ack', S().devices.torch.confirmed_state === 'ON', JSON.stringify(S().devices.torch))
+  check('torch twin records the ack and its source', S().devices.torch.last_ack?.status === 'ACKNOWLEDGED' && S().devices.torch.last_command?.source === 'conduit_intent_engine', JSON.stringify(S().devices.torch))
   check('event log has intent + command entries with reasons', S().log.some((l) => l.channel === 'command' && l.code === 'CONFIRMED') && S().log.some((l) => l.channel === 'intent' && l.reason !== undefined || l.detail.length > 0))
 
   // ---- accidental swipe through zones must not execute anything
@@ -87,11 +93,11 @@ async function main() {
   // neutral (non-activation) pose outside the zones: wait out the result hold without deactivating
   useConduit.setState({ pointer: { ...S().pointer, gesture: 'point' } })
   await hold(0.5, 0.85, 2.6)
-  const before = S().devices.lighting.confirmed_state + S().devices.access.confirmed_state
+  const before = S().devices.torch.confirmed_state + S().devices.screen.confirmed_state
   await move([0.02, 0.3], [0.98, 0.3], 0.5)
   await hold(0.98, 0.3, 0.3)
   useConduit.setState({ pointer: { ...S().pointer, gesture: 'open_palm' } })
-  check('swipe across zones executes nothing', S().devices.lighting.confirmed_state + S().devices.access.confirmed_state === before)
+  check('swipe across zones executes nothing', S().devices.torch.confirmed_state + S().devices.screen.confirmed_state === before)
   check('rejection logged with reason', S().log.some((l) => l.code === 'TRANSIT'))
 
   // ---- analytics session
@@ -123,7 +129,7 @@ async function main() {
   check('mode workspace offers a collapsed dashboard', !!dashboardBtn)
   await act(async () => { dashboardBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true })); await sleep(200) })
   check('hospital dashboard opens on demand with its fictional-data banner', /FICTIONAL DEMONSTRATION DATA/.test(text()) && /Patient information/.test(text()))
-  const physicalBefore = JSON.stringify({ lighting: S().devices.lighting.confirmed_state + S().devices.lighting.last_command?.command_id, access: S().devices.access.confirmed_state + S().devices.access.last_command?.command_id })
+  const physicalBefore = JSON.stringify({ torch: S().devices.torch.confirmed_state + S().devices.torch.last_command?.command_id, screen: S().devices.screen.confirmed_state + S().devices.screen.last_command?.command_id })
   const timerZone = S().zones.find((z) => z.id === 'hospital.timer')!
   const timerX = (timerZone.x0 + timerZone.x1) / 2
   const timerY = (timerZone.y0 + timerZone.y1) / 2
@@ -136,7 +142,7 @@ async function main() {
   await hold(timerX, timerY, 0.6, true)
   await sleep(500)
   check('digital action confirmed in the mode layer (timer runs)', S().modeState.hospital.timer.running && S().modeState.hospital.history.some((h) => h.source === 'intent' && h.status === 'confirmed'), JSON.stringify(S().modeState.hospital.history.slice(0, 1)))
-  check('digital action never changes the physical twin', JSON.stringify({ lighting: S().devices.lighting.confirmed_state + S().devices.lighting.last_command?.command_id, access: S().devices.access.confirmed_state + S().devices.access.last_command?.command_id }) === physicalBefore)
+  check('digital action never changes the physical twin', JSON.stringify({ torch: S().devices.torch.confirmed_state + S().devices.torch.last_command?.command_id, screen: S().devices.screen.confirmed_state + S().devices.screen.last_command?.command_id }) === physicalBefore)
   await act(async () => { useConduit.setState({ page: 'workspace' }); await sleep(200) })
   check('workspace dashboard still renders after the gesture', /Patient information/.test(text()) && /Task checklist/.test(text()))
 
@@ -158,12 +164,14 @@ async function main() {
 
   // ---- baseline comparison + simulated link failure
   await act(async () => { await rt().simulateFault(true) })
-  check('simulated link failure -> UNKNOWN + disconnected', S().devices.lighting.connection === 'disconnected' && S().devices.lighting.confirmed_state === 'UNKNOWN')
+  check('simulated link failure -> UNKNOWN + disconnected', S().devices.torch.connection === 'disconnected' && S().devices.torch.confirmed_state === 'UNKNOWN')
   await act(async () => { await rt().simulateFault(false) })
-  check('link restored -> safe states read back', S().devices.lighting.connection === 'simulated' && S().devices.lighting.confirmed_state === 'OFF')
+  check('link restored -> safe states read back', S().devices.torch.connection === 'simulated' && S().devices.torch.confirmed_state === 'OFF')
   await act(async () => { await rt().setHardwareMode('hardware') })
-  await act(async () => { await rt().testDevice('lighting', 'ON') })
-  check('hardware mode w/o serial port never fakes an ack', S().devices.lighting.confirmed_state === 'UNKNOWN' && S().devices.lighting.last_ack === null, JSON.stringify(S().devices.lighting))
+  await act(async () => { await rt().testDevice('torch', 'ON') })
+  check('hardware mode without adb never fakes an ack', S().devices.torch.confirmed_state === 'UNKNOWN' && S().devices.torch.last_ack === null, JSON.stringify(S().devices.torch))
+  await act(async () => { await rt().setHardwareMode('simulation'); await sleep(300) })
+  check('back to simulation restores the virtual phone node', S().hardwareMode === 'simulation' && S().devices.torch.simulated === true && S().devices.torch.confirmed_state === 'OFF', JSON.stringify(S().devices.torch))
   await act(async () => { await rt().stopVision() })
 
   // ---- per-mode signature gesture screens (view/navigation only; injected frames, no engine run)

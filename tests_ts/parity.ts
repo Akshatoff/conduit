@@ -69,7 +69,7 @@ const select = (d: Driver, x: number) => {
   check('deliberate approach reaches AWAITING_CONFIRMATION', d.engine.state === 'AWAITING_CONFIRMATION', `${d.engine.state} ${d.engine.reason}`)
   check('selection alone never executes', d.commands.length === 0)
   d.hold('pinch', 0.25, 0.33, 0.5)
-  check('pinch confirms -> EXECUTING with 1 command', d.engine.state === 'EXECUTING' && d.commands.length === 1 && d.commands[0].device === 'lighting' && d.commands[0].action === 'ON')
+  check('pinch confirms -> EXECUTING with 1 command', d.engine.state === 'EXECUTING' && d.commands.length === 1 && d.commands[0].device === 'torch' && d.commands[0].action === 'ON')
   d.engine.notifyCommandResult(true, 'ok', d.t)
   check('result -> COMPLETED', d.engine.state === 'COMPLETED')
   d.hold('open_palm', 0.25, 0.33, 4)
@@ -129,9 +129,9 @@ const select = (d: Driver, x: number) => {
 }
 {
   const d = new Driver()
-  d.states = { lighting: 'ON', access: 'LOCKED' }
+  d.states = { torch: 'ON', screen: 'OFF' }
   select(d, 0.25)
-  check('action is toggle of confirmed state (ON -> OFF)', d.engine.action === 'OFF')
+  check('action is toggle of confirmed state (torch ON -> OFF)', d.engine.action === 'OFF')
 }
 
 console.log(failed ? `\n${failed} parity check(s) FAILED` : '\nAll parity checks passed')
