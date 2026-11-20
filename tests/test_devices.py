@@ -313,3 +313,24 @@ def test_adb_inventory_reports_hint_when_no_phone(monkeypatch):
     monkeypatch.setattr(phone, "AdbRunner", lambda adb, serial, timeout_s: fake)
     info = adb_inventory("")
     assert info["devices"] == [] and "USB debugging" in info["hint"]
+
+
+def test_pulse_length_setting_reaches_the_phone_node():
+    fake = FakeAdb()
+    node = fake_node(fake)
+    c, _ = make(mode="hardware", hw=node)
+    c.configure_hardware("adb", "SERIAL", 8, 1200)
+    assert node.pulse_ms == 1200 and node.serial == "SERIAL" and node.timeout_s == 8
+    # values are clamped to the range the settings schema allows
+    c.configure_hardware("adb", "SERIAL", 8, 99999)
+    assert node.pulse_ms == 5000
+
+
+async def test_vibration_detail_uses_the_configured_pulse():
+    fake = FakeAdb()
+    node = fake_node(fake)
+    node.configure("adb", "", 8, 1200)
+    await node.health()   # capabilities are probed, never assumed
+    ack = await node.send(cmd(device="vibration", action="ON"))
+    assert ack.status == "ACKNOWLEDGED" and "1200 ms" in ack.detail
+    await node.send(cmd(device="vibration", action="OFF"))

@@ -65,7 +65,7 @@ export class SimulatedNode implements DeviceNode {
 export class PhoneAdbUnavailableNode implements DeviceNode {
   name = 'phone-adb'
   simulated = false
-  constructor(public adbPath = '', public serial = '', public timeoutS = 8) {}
+  constructor(public adbPath = '', public serial = '', public timeoutS = 8, public pulseMs = 700) {}
   private fail(): never {
     throw new NodeError(
       'Hardware mode needs the Python backend: a browser cannot run adb. Start scripts\\run.bat, connect the phone and reload.',
@@ -139,8 +139,9 @@ export class DeviceController {
     for (const id of Object.keys(this.twin)) this.emitDevice(id, `Mode switched to ${mode}`)
   }
 
-  configureHardware(adbPath: string, serial: string, timeoutS: number) {
+  configureHardware(adbPath: string, serial: string, timeoutS: number, pulseMs?: number) {
     Object.assign(this.hw, { adbPath, serial, timeoutS })
+    if (pulseMs !== undefined) this.hw.pulseMs = Math.max(50, Math.min(5000, Math.round(pulseMs)))
   }
 
   async refresh(): Promise<boolean> {

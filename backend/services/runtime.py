@@ -30,7 +30,8 @@ class ConduitRuntime:
         self.analytics = AnalyticsService(session_factory)
         self.controller = DeviceController(mode=settings.hardware_mode, emit=self._on_device_event,
                                            min_confidence=settings.intent.min_confidence)
-        self.controller.configure_hardware(settings.phone.adb_path, settings.phone.serial, settings.phone.timeout_s)
+        self.controller.configure_hardware(settings.phone.adb_path, settings.phone.serial, settings.phone.timeout_s,
+                                          settings.phone.pulse_ms)
         self.engine = IntentEngine(settings.intent, device_states=self.controller.device_states)
         self.baseline = BaselineController(device_states=self.controller.device_states)
         self.interaction_mode = settings.interaction_mode
@@ -331,7 +332,7 @@ class ConduitRuntime:
         self.workspace_mode = new.workspace_mode
         self.engine.set_config(new.intent)
         self.controller.min_confidence = new.intent.min_confidence
-        self.controller.configure_hardware(new.phone.adb_path, new.phone.serial, new.phone.timeout_s)
+        self.controller.configure_hardware(new.phone.adb_path, new.phone.serial, new.phone.timeout_s, new.phone.pulse_ms)
         if self.interaction_mode != new.interaction_mode:
             self.set_interaction_mode(new.interaction_mode)
         if old.hardware_mode != new.hardware_mode or self.controller.mode != new.hardware_mode:

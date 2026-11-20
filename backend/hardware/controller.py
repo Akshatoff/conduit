@@ -110,9 +110,10 @@ class DeviceController:
         for did in self.twin:
             self._emit_device_state(did, f"Mode switched to {mode}")
 
-    def configure_hardware(self, adb_path: str, serial: str, timeout_s: float) -> None:
-        """Point the controller at a phone: adb executable, device serial (blank = first device)."""
-        self.hw.configure(adb_path, serial, timeout_s)
+    def configure_hardware(self, adb_path: str, serial: str, timeout_s: float,
+                           pulse_ms: Optional[int] = None) -> None:
+        """Point the controller at a phone: adb executable, serial (blank = first device), pulse length."""
+        self.hw.configure(adb_path, serial, timeout_s, pulse_ms)
 
     async def refresh(self) -> bool:
         """Health-check the active node and read back whatever it can (device registration + heartbeat)."""

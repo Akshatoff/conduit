@@ -83,7 +83,7 @@ export class LocalRuntime implements Runtime {
 
   constructor() {
     this.controller = new DeviceController(this.settings.hardware_mode, (t, d) => this.onDeviceEvent(t, d), this.settings.intent.min_confidence)
-    this.controller.configureHardware(this.settings.phone.adb_path, this.settings.phone.serial, this.settings.phone.timeout_s)
+    this.controller.configureHardware(this.settings.phone.adb_path, this.settings.phone.serial, this.settings.phone.timeout_s, this.settings.phone.pulse_ms)
     this.engine = new IntentEngine(this.settings.intent, this.controller.deviceStates)
     this.baseline = new BaselineController(this.controller.deviceStates)
     this.video = document.createElement('video')
@@ -520,7 +520,7 @@ export class LocalRuntime implements Runtime {
     this.persist()
     this.engine.setConfig(s.intent)
     this.controller.minConfidence = s.intent.min_confidence
-    this.controller.configureHardware(s.phone.adb_path, s.phone.serial, s.phone.timeout_s)
+    this.controller.configureHardware(s.phone.adb_path, s.phone.serial, s.phone.timeout_s, s.phone.pulse_ms)
     this.smoother.alpha = s.camera.smoothing_alpha
     if (modeChanged) await this.controller.setMode(s.hardware_mode)
     else if (s.hardware_mode === 'hardware') await this.controller.refresh()

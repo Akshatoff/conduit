@@ -120,10 +120,13 @@ class PhoneAdbNode(DeviceNode):
     def adb(self) -> str:
         return self._runner.adb if self._runner else (self._configured_adb or "adb")
 
-    def configure(self, adb_path: str, serial: str, timeout_s: float) -> None:
+    def configure(self, adb_path: str, serial: str, timeout_s: float,
+                  pulse_ms: Optional[int] = None) -> None:
         self._configured_adb = adb_path
         self.serial = serial
         self.timeout_s = timeout_s
+        if pulse_ms is not None:
+            self.pulse_ms = max(50, min(5000, int(pulse_ms)))
         if self._runner is not None:  # keep an injected runner pointed at the new target
             self._runner.serial = serial
             self._runner.adb = adb_path or self._runner.adb
